@@ -145,6 +145,14 @@ If an open issue with the same title (case-insensitive, extra spaces ignored) al
 
 For sequential PR delivery, use `issue create --title "..." --pr-auto-complete off` or `issue update <id> --pr-auto-complete off` to keep that issue's status when PRs merge. Use `--pr-auto-complete on` to restore the workspace rule; this takes effect at the next PR event. `issue pull-requests <id>` shows the issue override, workspace setting, target status, and decision state, even with no linked PRs. Supported servers save the creation override atomically; older servers receive a follow-up PUT. If that fails, the CLI reports the created issue ID and an update command to retry, so do not repeat the create.
 
+Hear back about an issue you created, instead of polling it: `--wake-me-on` subscribes the agent running the command to the new issue's `in_review`, `blocked`, and failed runs.
+
+```bash
+multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
+```
+
+Each state is an ordinary wakeup on the new issue, so it carries the same loop protection and `--max-fires` cap, wakes once per change, and is withdrawn when the issue closes. Registering the same rule twice returns the existing one rather than adding a second. Without this flag, wait on another issue's state from the issue you are working on: `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review` — that covers an issue with no parent, including one you created on your own.
+
 ### Batch updates
 
 Apply the same change to several issues, or pass one issue key or UUID per line with `--ids-stdin`:
@@ -481,7 +489,7 @@ Migration from CSV parsing: replace `--attachment a,b` with `--attachment a --at
 | --- | --- | --- | --- |
 | `issue` | `list` | List issues | `--status`, `--priority`, `--assignee`, `--project`, `--updated-since` / `--updated-until` (paired RFC3339 bounds), `--metadata` (repeatable), `--property` (repeatable, `"Name=Value"` or a comparison such as `"Score>=3"`, `"Due<2026-01-01"`, `"Notes~=text"`; `__none__` matches unset), `--limit`, `--offset`, `--sort` (incl. `property:<name-or-id>`), `--full-id`, `--fields` (JSON only; comma-separated fields to keep), `--resolve-properties` (JSON only; rows with property, option and member names beside the stored ids) |
 | | `get <id>` | Show a single issue | `--resolve-properties` (JSON only; rows with property, option and member names beside the stored ids) |
-| | `create` | Create an issue | `--title` (required), `--description` / `--description-stdin` / `--description-file`, `--pr-auto-complete on/off`, `--status`, `--priority`, `--assignee`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment` (repeatable), `--property` (repeatable), `--allow-duplicate` (create even when an open issue with the same title exists) |
+| | `create` | Create an issue | `--title` (required), `--description` / `--description-stdin` / `--description-file`, `--pr-auto-complete on/off`, `--status`, `--priority`, `--assignee`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment` (repeatable), `--property` (repeatable), `--allow-duplicate` (create even when an open issue with the same title exists), `--wake-me-on` (`in_review`, `blocked`, `failed`: wake the creating agent when the new issue gets there) |
 | | `update <id>` | Update issue fields | Same fields as `create`, plus `--position`, `--no-start`, `--duplicate-of` |
 | | `batch update <id>...` | Apply one change to several issues | `--ids-stdin`, `--status`, `--priority`, `--assignee` / `--assignee-id` / `--unassign`, `--project`, `--start-date`, `--due-date`, `--parent`, `--stage`, `--add-label`, `--remove-label`, `--clear-labels`, `--property`, `--unset-property`, `--no-start`, `--dry-run` |
 | | `delete <id>...` | Permanently delete one or more issues | `--yes` skips confirmation; accepts issue keys or full UUIDs; `--dry-run` |
