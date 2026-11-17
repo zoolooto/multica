@@ -151,7 +151,7 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 multica issue create --title "审计这次迁移" --wake-me-on in_review,blocked,failed
 ```
 
-每个状态都是挂在新任务上的一条普通唤醒，因此同样受循环保护与 `--max-fires` 上限约束，每次状态变化唤醒一次，任务关闭时一并撤销；事件或条件规则用相同的指令、事件或条件、筛选条件再登记一次，会返回既有那条，不会多出一条。不用这个开关时，也可以在正在处理的任务上等另一条任务的状态：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`，这对没有父任务的独立任务同样适用。
+每个状态都是挂在新任务上的一条普通唤醒，因此同样受循环保护与 `--max-fires` 上限约束，每次状态变化唤醒一次，任务关闭时一并撤销；事件或条件规则用相同的指令、事件或条件、筛选条件再登记一次，会返回既有那条，不会多出一条。不用这个开关时，也可以在正在处理的任务上等另一条任务的状态：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review --instruction "查看 MUL-123 的回复，然后继续"`，这对没有父任务的独立任务同样适用。
 
 ### 批量更新
 

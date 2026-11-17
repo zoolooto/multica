@@ -151,7 +151,7 @@ Pour suivre une tâche que vous avez créée sans la surveiller, `--wake-me-on` 
 multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
 ```
 
-Chaque état est une règle de réveil ordinaire sur la nouvelle tâche : elle garde la protection anti-boucle et le plafond `--max-fires`, réveille à chaque changement, et disparaît quand la tâche se ferme. Enregistrer deux fois une règle d'événement ou de condition avec la même instruction, le même événement ou la même condition et les mêmes filtres renvoie la règle existante, sans seconde exécution. Sans ce drapeau, attendez l'état d'une autre tâche depuis la tâche en cours : `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`.
+Chaque état est une règle de réveil ordinaire sur la nouvelle tâche : elle garde la protection anti-boucle et le plafond `--max-fires`, réveille à chaque changement, et disparaît quand la tâche se ferme. Enregistrer deux fois une règle d'événement ou de condition avec la même instruction, le même événement ou la même condition et les mêmes filtres renvoie la règle existante, sans seconde exécution. Sans ce drapeau, attendez l'état d'une autre tâche depuis la tâche en cours : `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review --instruction "Lire la réponse sur MUL-123, puis continuer"`.
 
 ### Mises à jour groupées
 

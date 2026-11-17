@@ -151,7 +151,7 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
 ```
 
-各状態は新しいタスク上の普通のウェイクアップで、ループ保護と `--max-fires` の上限をそのまま受け、状態が変わるたびに起動し、タスクが閉じると一緒に外れます。同じ指示・イベントまたは条件・フィルターでイベント／条件ルールをもう一度登録すると、既存のルールが返り、実行は増えません。このフラグを使わない場合は、作業中のタスクから別のタスクの状態を待てます：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`。
+各状態は新しいタスク上の普通のウェイクアップで、ループ保護と `--max-fires` の上限をそのまま受け、状態が変わるたびに起動し、タスクが閉じると一緒に外れます。同じ指示・イベントまたは条件・フィルターでイベント／条件ルールをもう一度登録すると、既存のルールが返り、実行は増えません。このフラグを使わない場合は、作業中のタスクから別のタスクの状態を待てます：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review --instruction "MUL-123 の返信を確認して続ける"`。
 
 ### 一括更新
 

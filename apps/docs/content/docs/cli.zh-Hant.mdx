@@ -151,7 +151,7 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
 ```
 
-每個狀態都是掛在新任務上的一條普通喚醒，因此同樣受迴圈保護與 `--max-fires` 上限約束，每次狀態變化喚醒一次，任務關閉時一併撤銷；事件或條件規則以相同的指令、事件或條件、篩選條件再登記一次，會回傳既有那條，不會多出一次執行。不用這個開關時，也可以在正在處理的任務上等另一條任務的狀態：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`。
+每個狀態都是掛在新任務上的一條普通喚醒，因此同樣受迴圈保護與 `--max-fires` 上限約束，每次狀態變化喚醒一次，任務關閉時一併撤銷；事件或條件規則以相同的指令、事件或條件、篩選條件再登記一次，會回傳既有那條，不會多出一次執行。不用這個開關時，也可以在正在處理的任務上等另一條任務的狀態：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review --instruction "查看 MUL-123 的回覆，然後繼續"`。
 
 ### 批次更新
 

@@ -151,7 +151,7 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
 ```
 
-각 상태는 새 태스크에 붙는 평범한 깨우기 규칙이라 루프 보호와 `--max-fires` 상한이 그대로 적용되고, 상태가 바뀔 때마다 깨우며, 태스크가 닫히면 함께 사라집니다. 같은 지시, 이벤트 또는 조건, 필터로 이벤트·조건 규칙을 다시 등록하면 기존 규칙이 반환되고 실행이 늘지 않습니다. 이 플래그 없이도 작업 중인 태스크에서 다른 태스크의 상태를 기다릴 수 있습니다: `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`.
+각 상태는 새 태스크에 붙는 평범한 깨우기 규칙이라 루프 보호와 `--max-fires` 상한이 그대로 적용되고, 상태가 바뀔 때마다 깨우며, 태스크가 닫히면 함께 사라집니다. 같은 지시, 이벤트 또는 조건, 필터로 이벤트·조건 규칙을 다시 등록하면 기존 규칙이 반환되고 실행이 늘지 않습니다. 이 플래그 없이도 작업 중인 태스크에서 다른 태스크의 상태를 기다릴 수 있습니다: `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review --instruction "MUL-123의 답변을 확인한 뒤 계속 진행"`.
 
 ### 일괄 업데이트
 
