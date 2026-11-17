@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/instanceadmin"
 	"github.com/multica-ai/multica/server/internal/util"
 )
 
@@ -43,6 +42,14 @@ type instanceAccessResponse struct {
 	IsInstanceAdmin bool `json:"is_instance_admin"`
 }
 
+// instanceCaller is the account behind an authorized request: the fields the
+// instance endpoints need after the identity check has already loaded the user
+// row. Timezone is the account's stored, validated zone, or "" when it never
+// set one — the overview uses it instead of re-reading the user.
+type instanceCaller struct {
+	Timezone string
+}
+
 // GetInstanceAccess reports whether the caller may use the instance surface.
 // It is a probe for the caller (a future console entry point uses it to decide
 // whether to render at all), so a non-administrator gets a plain false rather
@@ -53,9 +60,8 @@ func (h *Handler) GetInstanceAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, instanceAccessResponse{
-		IsInstanceAdmin: h.instanceAdminAllowed(r, userID),
-	})
+	_, allowed := h.instanceAdminCaller(r, userID)
+	writeJSON(w, http.StatusOK, instanceAccessResponse{IsInstanceAdmin: allowed})
 }
 
 // GetInstanceOverview serves the instance-wide read model: workspaces, users,
@@ -65,7 +71,8 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !h.instanceAdminAllowed(r, userID) {
+	caller, allowed := h.instanceAdminCaller(r, userID)
+	if !allowed {
 		writeError(w, http.StatusForbidden, "instance administration is not available to this account")
 		return
 	}
@@ -75,20 +82,21 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	days := daysParam(r, instanceOverviewDefaultDays)
-	tz := h.resolveViewingTZ(r)
-	// resolveViewingTZ only ever returns a loadable zone (a validated ?tz=, a
-	// stored timezone that loads, or "UTC"), so the fallback below is a
-	// formality; it keeps the handler honest if that contract changes.
-	loc, err := time.LoadLocation(tz)
-	if err != nil || loc == nil {
-		tz = "UTC"
-		loc = time.UTC
+	tz := validTimezone(r.URL.Query().Get("tz"))
+	if tz == "" {
+		tz = caller.Timezone
 	}
-	// Same calendar-day convention as the workspace dashboard: the window
-	// covers today plus the previous days-1 days in the viewer's zone.
-	since := sinceFromDays(dayWindowNow(), days-1, loc)
+	if tz == "" {
+		tz = "UTC"
+	}
+	// Exactly `days` calendar days in the viewer's zone — today's partial day
+	// plus the previous days-1. The date-bucketed dashboard series return one
+	// extra day and trim it client-side; this payload also carries windowed
+	// totals (summary) that no client can trim, so the window has to agree with
+	// the advertised `window_days`. Same cutoff as parseExactSinceParamInTZ.
+	since := parseDaysCutoff(r, instanceOverviewDefaultDays, tz, 1)
 
-	overview, err := h.InstanceAdminStore.Load(r.Context(), since, tz)
+	overview, err := h.InstanceAdminStore.Load(r.Context(), since.Time, tz)
 	if err != nil {
 		slog.Error("instance overview: load failed", "path", r.URL.Path, "error", err)
 		writeError(w, http.StatusInternalServerError, "failed to load instance overview")
@@ -100,7 +108,9 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, overview)
 }
 
-// instanceAdminAllowed applies the whole identity check in one place.
+// instanceAdminCaller applies the whole identity check in one place and
+// returns what the handler needs afterwards, so an authorized overview request
+// reads the account row once.
 //
 // The order matters for cost and for what leaks: the configuration check
 // short-circuits before the user lookup, and the machine-credential refusal
@@ -111,24 +121,24 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 // authoritative gate. This check is the fail-closed backstop the actor-guard
 // contract asks sensitive handlers to keep, so a future route added to the
 // group without the middleware still refuses machine credentials.
-func (h *Handler) instanceAdminAllowed(r *http.Request, userID string) bool {
+func (h *Handler) instanceAdminCaller(r *http.Request, userID string) (instanceCaller, bool) {
 	if !h.InstanceAdmins.Configured() {
-		return false
+		return instanceCaller{}, false
 	}
 	if isMachineCredentialActor(r) {
-		return false
+		return instanceCaller{}, false
 	}
 	uid, err := util.ParseUUID(userID)
 	if err != nil {
-		return false
+		return instanceCaller{}, false
 	}
 	user, err := h.Queries.GetUser(r.Context(), uid)
 	if err != nil {
 		slog.Warn("instance admin: user lookup failed", "path", r.URL.Path, "error", err)
-		return false
+		return instanceCaller{}, false
 	}
-	return h.InstanceAdmins.Allows(user.Email)
+	if !h.InstanceAdmins.Allows(user.Email) {
+		return instanceCaller{}, false
+	}
+	return instanceCaller{Timezone: validTimezone(user.Timezone.String)}, true
 }
-
-// compile-time check that the store satisfies the handler's reader contract.
-var _ instanceadmin.Reader = (*instanceadmin.Store)(nil)

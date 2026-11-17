@@ -316,7 +316,10 @@ SELECT
     SUM(tu.output_tokens)::bigint AS output_tokens,
     SUM(tu.cache_read_tokens)::bigint AS cache_read_tokens,
     SUM(tu.cache_write_tokens)::bigint AS cache_write_tokens,
-    SUM(tu.cost_usd_ticks)::bigint AS cost_usd_ticks,
+    -- cost_usd_ticks is NULL when the provider did not price the row, and SUM
+    -- over an all-NULL bucket would come back NULL; the payload reports 0 cost
+    -- there (those tokens are still counted) instead of failing the scan.
+    COALESCE(SUM(tu.cost_usd_ticks), 0)::bigint AS cost_usd_ticks,
     SUM(tu.task_count)::bigint AS task_count
 FROM task_usage_hourly tu
 JOIN workspace w ON w.id = tu.workspace_id

@@ -48,3 +48,15 @@ func TestNewAdminsCannotBeBypassedByEmptyEntry(t *testing.T) {
 		t.Fatal("Allows(\"\") = true; an empty entry must not grant access")
 	}
 }
+
+func TestAdminsTreatsDuplicateEntriesAsOne(t *testing.T) {
+	// Operators repeat an address when a list is edited by hand; it must not
+	// change who is admitted or make Configured() depend on the count.
+	admins := NewAdmins([]string{"Ops@Example.com", "ops@example.com", "  OPS@example.com"})
+	if !admins.Allows("ops@example.com") {
+		t.Fatal("Allows(ops@example.com) = false with three spellings of the same address")
+	}
+	if admins.Allows("platform-lead@example.com") {
+		t.Fatal("Allows(platform-lead@example.com) = true for a list that never named it")
+	}
+}

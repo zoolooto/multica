@@ -132,7 +132,7 @@ INSTANCE_ADMIN_EMAILS=ops@example.com,platform-lead@example.com
 - **workspaces**: owner, member / agent / runtime counts, online runtimes, open issues, last activity.
 - **users**: email, created-at, workspace memberships with each role, last client activity (empty for accounts that never used an official client).
 - **agents**: every cross-workspace agent with its workspace, owner, runtime provider / online state, model and last run.
-- **usage**: daily rows grouped by workspace, provider and model (tokens, cost, task count) for the last `days` days. `days` defaults to 30 and is capped at 365; `tz` defaults to the caller's stored timezone, then UTC.
+- **usage**: daily rows grouped by workspace, provider and model (tokens, cost, task count) for the last `days` days. `days` defaults to 30 and is capped at 365; `tz` defaults to the caller's stored timezone, then UTC. Tokens and cost are summed from the same window the summary reports; cost only counts rows the provider itself priced, so credit-billed rows contribute tokens with zero cost.
 
 Things to know:
 

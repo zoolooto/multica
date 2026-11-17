@@ -470,7 +470,7 @@ type Handler struct {
 	// InstanceAdminStore loads that model. Nil when the handler was built
 	// without a DB executor; the overview endpoint then refuses with 503
 	// instead of panicking.
-	InstanceAdminStore instanceadmin.Reader
+	InstanceAdminStore *instanceadmin.Store
 	cfg                Config
 }
 

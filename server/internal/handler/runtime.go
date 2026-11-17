@@ -437,10 +437,8 @@ func parseDaysCutoff(
 // a hot path. Do not replicate this DB-read pattern into a handler that
 // runs without a `?tz=`-supplying client in front of it.
 func (h *Handler) resolveViewingTZ(r *http.Request) string {
-	if tz := strings.TrimSpace(r.URL.Query().Get("tz")); tz != "" {
-		if loc, err := time.LoadLocation(tz); err == nil && loc != nil {
-			return tz
-		}
+	if tz := validTimezone(r.URL.Query().Get("tz")); tz != "" {
+		return tz
 	}
 	if userID := requestUserID(r); userID != "" {
 		uid, err := util.ParseUUID(userID)
@@ -451,17 +449,28 @@ func (h *Handler) resolveViewingTZ(r *http.Request) string {
 		if err == nil {
 			slog.Debug("resolveViewingTZ cold path: ?tz= missing, reading user.timezone",
 				"path", r.URL.Path, "user_id", userID)
-			if user, err := h.Queries.GetUser(r.Context(), uid); err == nil && user.Timezone.Valid {
-				stored := strings.TrimSpace(user.Timezone.String)
-				if stored != "" {
-					if loc, err := time.LoadLocation(stored); err == nil && loc != nil {
-						return stored
-					}
+			if user, err := h.Queries.GetUser(r.Context(), uid); err == nil {
+				if stored := validTimezone(user.Timezone.String); stored != "" {
+					return stored
 				}
 			}
 		}
 	}
 	return "UTC"
+}
+
+// validTimezone returns name when it is a loadable IANA zone, and "" when it
+// is empty, blank, or unknown. Shared by the handlers that let a client pick a
+// display zone so the validation cannot drift between them.
+func validTimezone(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if loc, err := time.LoadLocation(name); err != nil || loc == nil {
+		return ""
+	}
+	return name
 }
 
 // UpdateAgentRuntimeRequest is the JSON body accepted by PATCH /api/runtimes/:id.

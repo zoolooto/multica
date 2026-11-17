@@ -1,55 +1,107 @@
-package handler
+package instanceadmin
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/instanceadmin"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
-// TestInstanceStoreAggregatesAcrossWorkspaces exercises the read model
-// directly, with an explicit cutoff, because the HTTP handler always derives
-// its cutoff from the wall clock and the timezone day boundary can only be
-// asserted against a pinned instant.
-//
-// The suite shares one database with packages running in parallel, so every
-// assertion is about this test's own rows (one provider marker, one model
-// name): the instance-wide totals can include another test's fixtures.
-func TestInstanceStoreAggregatesAcrossWorkspaces(t *testing.T) {
+var testPool *pgxpool.Pool
+var dbfx *testutil.Fixture
+
+// TestMain mirrors the other DB-backed packages: DATABASE_URL, otherwise the
+// local default, and a skip when the database is unreachable. Without this the
+// store's SQL would only be exercised through the HTTP handler, where the
+// cutoff comes from the wall clock and cannot be pinned to a fixed instant.
+func TestMain(m *testing.M) {
 	ctx := context.Background()
+	dbURL := os.Getenv("DATABASE_URL")
+	dbConfigured := dbURL != ""
+	if !dbConfigured {
+		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+	}
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		if dbConfigured {
+			fmt.Fprintln(os.Stderr, "Failed to configure instanceadmin test database from DATABASE_URL")
+			os.Exit(1)
+		}
+		fmt.Printf("Skipping tests: could not connect to database: %v\n", err)
+		os.Exit(0)
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		if dbConfigured {
+			fmt.Fprintln(os.Stderr, "Failed to connect to instanceadmin test database configured by DATABASE_URL")
+			os.Exit(1)
+		}
+		fmt.Printf("Skipping tests: database not reachable: %v\n", err)
+		os.Exit(0)
+	}
+
+	testPool = pool
+	dbfx = testutil.New(pool, "", "")
+
+	code := m.Run()
+	pool.Close()
+	os.Exit(code)
+}
+
+// TestStoreAggregatesAcrossWorkspaces exercises the read model directly with
+// a pinned cutoff: per-workspace grouping, window filtering, token/cost sums,
+// owner/count rows, the archived and kind='system' exclusions, and the
+// timezone day boundary.
+//
+// The database is shared with packages running in parallel, so every assertion
+// is about this test's own rows (one provider marker, one model name): the
+// instance-wide totals can include another test's fixtures.
+func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
+	ctx := context.Background()
+	unique := time.Now().UnixNano()
+
+	homeUser := dbfx.User(t, "Instance Store Home", "instance-store-home@multica.ai")
+	homeWorkspace := dbfx.Workspace(t, "Instance Store Home", fmt.Sprintf("instance-store-home-%d", unique))
+	dbfx.Member(t, homeWorkspace, homeUser, "owner")
+	homeRuntime := dbfx.Runtime(t, "instance-store-home-runtime", testutil.Cols{
+		"workspace_id": homeWorkspace,
+		"owner_id":     homeUser,
+	})
+	homeAgent := dbfx.Agent(t, "instance-store-home-agent", homeRuntime, testutil.Cols{
+		"workspace_id": homeWorkspace,
+		"owner_id":     homeUser,
+	})
 
 	otherUser := dbfx.User(t, "Instance Store Other", "instance-store-other@multica.ai")
-	otherWorkspace := dbfx.Workspace(t, "Instance Store Other", fmt.Sprintf("instance-store-other-%d", time.Now().UnixNano()))
+	otherWorkspace := dbfx.Workspace(t, "Instance Store Other", fmt.Sprintf("instance-store-other-%d", unique))
 	dbfx.Member(t, otherWorkspace, otherUser, "owner")
-	otherRuntime := dbfx.Runtime(t, "instance-store-runtime", testutil.Cols{
+	otherRuntime := dbfx.Runtime(t, "instance-store-other-runtime", testutil.Cols{
 		"workspace_id": otherWorkspace,
 		"owner_id":     otherUser,
 	})
-	otherAgent := dbfx.Agent(t, "instance-store-agent", otherRuntime, testutil.Cols{
+	otherAgent := dbfx.Agent(t, "instance-store-other-agent", otherRuntime, testutil.Cols{
 		"workspace_id": otherWorkspace,
 		"owner_id":     otherUser,
-	})
-	// The two exclusions the list documents: archived agents and the
-	// kind='system' carriers that back squads, not user-facing agents.
-	archivedAgent := dbfx.Agent(t, "instance-store-archived", testRuntimeID, testutil.Cols{
-		"archived_at": testutil.Raw("now()"),
-	})
-	systemAgent := dbfx.Agent(t, "instance-store-system", testRuntimeID, testutil.Cols{
-		"kind": "system",
 	})
 
-	var homeAgent string
-	if err := testPool.QueryRow(ctx, `
-		SELECT id::text FROM agent
-		WHERE workspace_id = $1
-		ORDER BY created_at ASC, id ASC
-		LIMIT 1
-	`, testWorkspaceID).Scan(&homeAgent); err != nil {
-		t.Fatalf("look up a test-workspace agent: %v", err)
-	}
+	// The two exclusions the list documents: archived agents and the
+	// kind='system' carriers that back squads, not user-facing agents.
+	archivedAgent := dbfx.Agent(t, "instance-store-archived", homeRuntime, testutil.Cols{
+		"workspace_id": homeWorkspace,
+		"owner_id":     homeUser,
+		"archived_at":  testutil.Raw("now()"),
+	})
+	systemAgent := dbfx.Agent(t, "instance-store-system", homeRuntime, testutil.Cols{
+		"workspace_id": homeWorkspace,
+		"owner_id":     homeUser,
+		"kind":         "system",
+	})
 
 	const provider = "instance_store_provider"
 	const model = "instance-store-model"
@@ -68,13 +120,13 @@ func TestInstanceStoreAggregatesAcrossWorkspaces(t *testing.T) {
 		)
 		VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, 0, 0, 1, 1, $9)
 	`
-	dbfx.Exec(t, insertUsage, inWindow, testWorkspaceID, testRuntimeID, homeAgent, provider, model, 100, 10, 300)
+	dbfx.Exec(t, insertUsage, inWindow, homeWorkspace, homeRuntime, homeAgent, provider, model, 100, 10, 300)
 	dbfx.Exec(t, insertUsage, inWindow, otherWorkspace, otherRuntime, otherAgent, provider, model, 200, 20, 400)
-	dbfx.Exec(t, insertUsage, beforeWindow, testWorkspaceID, testRuntimeID, homeAgent, provider, staleModel, 999, 999, 999)
+	dbfx.Exec(t, insertUsage, beforeWindow, homeWorkspace, homeRuntime, homeAgent, provider, staleModel, 999, 999, 999)
 	dbfx.Cleanup(t, `DELETE FROM task_usage_hourly WHERE provider = $1`, provider)
 
 	since := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	store := instanceadmin.NewStore(testPool)
+	store := NewStore(testPool)
 
 	utcOverview, err := store.Load(ctx, since, "UTC")
 	if err != nil {
@@ -98,12 +150,12 @@ func TestInstanceStoreAggregatesAcrossWorkspaces(t *testing.T) {
 			}
 			seen[row.WorkspaceID] = bucket{date: row.Date, inputTokens: row.InputTokens, cost: row.CostUSDTicks}
 		}
-		home, ok := seen[testWorkspaceID]
+		home, ok := seen[homeWorkspace]
 		if !ok {
-			t.Fatalf("test workspace missing from usage: %+v", seen)
+			t.Fatalf("home workspace missing from usage: %+v", seen)
 		}
 		if home.inputTokens != 100 || home.cost != 300 {
-			t.Errorf("test workspace usage = tokens:%d cost:%d, want 100/300", home.inputTokens, home.cost)
+			t.Errorf("home workspace usage = tokens:%d cost:%d, want 100/300", home.inputTokens, home.cost)
 		}
 		other, ok := seen[otherWorkspace]
 		if !ok {
@@ -122,12 +174,12 @@ func TestInstanceStoreAggregatesAcrossWorkspaces(t *testing.T) {
 	t.Run("timezone decides the calendar day", func(t *testing.T) {
 		var utcDay, shanghaiDay string
 		for _, row := range utcOverview.Usage {
-			if row.WorkspaceID == testWorkspaceID && row.Model == model {
+			if row.WorkspaceID == homeWorkspace && row.Model == model {
 				utcDay = row.Date
 			}
 		}
 		for _, row := range shanghaiOverview.Usage {
-			if row.WorkspaceID == testWorkspaceID && row.Model == model {
+			if row.WorkspaceID == homeWorkspace && row.Model == model {
 				shanghaiDay = row.Date
 			}
 		}
@@ -187,7 +239,7 @@ func TestInstanceStoreAggregatesAcrossWorkspaces(t *testing.T) {
 		var sawOther, sawArchived, sawSystem bool
 		for _, agent := range utcOverview.Agents {
 			switch agent.Name {
-			case "instance-store-agent":
+			case "instance-store-other-agent":
 				sawOther = true
 				if agent.WorkspaceID != otherWorkspace || agent.WorkspaceName != "Instance Store Other" {
 					t.Errorf("agent workspace = %s/%s, want %s/Instance Store Other",

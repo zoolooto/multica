@@ -1,10 +1,5 @@
 package instanceadmin
 
-import (
-	"context"
-	"time"
-)
-
 // Owner is the account behind a workspace or agent. It carries no role: an
 // instance administrator does not inherit the workspace roles of the owner it
 // looks at.
@@ -17,6 +12,11 @@ type Owner struct {
 // WorkspaceSummary is one row of the instance-wide workspace list: the
 // answers an operator needs before deciding whether a workspace is alive,
 // without opening it.
+//
+// LastActivityAt is the later of the workspace row's own update and its newest
+// issue update — the two timestamps that move whenever someone works in the
+// workspace. Client heartbeats are reported per account instead, because they
+// say who was active, not which workspace changed.
 type WorkspaceSummary struct {
 	ID                 string  `json:"id"`
 	Name               string  `json:"name"`
@@ -73,6 +73,12 @@ type AgentSummary struct {
 // UsageRow is instance-wide token/cost usage for one day, workspace, provider
 // and model. The dimensions are kept separate so a caller can aggregate by
 // any of them; the day is already projected into the viewer's timezone.
+//
+// CostUSDTicks only counts rows the provider itself priced (Cursor's auto
+// model, for one, bills in credits instead); those rows still contribute their
+// tokens, with zero cost. The workspace dashboard splits the same two cases
+// into priced and unpriced token columns; this report keeps one cost total and
+// says so in the operator docs rather than growing two more columns.
 type UsageRow struct {
 	Date             string `json:"date"`
 	WorkspaceID      string `json:"workspace_id"`
@@ -89,7 +95,8 @@ type UsageRow struct {
 
 // Summary is the instance-level headline: totals that hold regardless of the
 // selected workspace (object counts) plus activity confined to the requested
-// window (runs, failures, tokens, cost).
+// window (runs, failures, tokens, cost). CostUSDTicks follows UsageRow's
+// priced-rows-only rule.
 type Summary struct {
 	WorkspaceCount     int   `json:"workspace_count"`
 	UserCount          int   `json:"user_count"`
@@ -119,11 +126,4 @@ type Overview struct {
 	Users       []UserSummary      `json:"users"`
 	Agents      []AgentSummary     `json:"agents"`
 	Usage       []UsageRow         `json:"usage"`
-}
-
-// Reader loads the read model. The HTTP layer depends on this interface so a
-// test can assert the response shape and the authorization decision without a
-// database.
-type Reader interface {
-	Load(ctx context.Context, since time.Time, tz string) (Overview, error)
 }

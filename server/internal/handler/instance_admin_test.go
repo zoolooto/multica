@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/multica-ai/multica/server/internal/instanceadmin"
+	"github.com/multica-ai/multica/server/internal/testutil"
 )
 
 // withInstanceAdmins swaps the handler's configured administrator set for one
@@ -187,37 +190,46 @@ func TestInstanceOverviewContainsInstanceWideRowsAndUsage(t *testing.T) {
 	withInstanceAdmins(t, handlerTestEmail)
 	ctx := context.Background()
 
-	if _, err := testPool.Exec(ctx, `
-		INSERT INTO task_usage_hourly (
-			bucket_hour, workspace_id, runtime_id, agent_id, project_id,
-			provider, model, input_tokens, output_tokens,
-			cache_read_tokens, cache_write_tokens, task_count, event_count,
-			cost_usd_ticks
-		)
-		VALUES (date_trunc('hour', now()), $1, $2,
-			(SELECT id FROM agent WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1),
-			NULL, 'Anthropic', 'instance-admin-test-model', 1200, 300, 10, 20, 3, 3, 5000)
-	`, testWorkspaceID, testRuntimeID); err != nil {
-		t.Fatalf("seed task_usage_hourly: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = testPool.Exec(ctx, `DELETE FROM task_usage_hourly WHERE workspace_id = $1 AND model = 'instance-admin-test-model'`, testWorkspaceID)
-	})
-
-	var clientUsageInstall string
+	var seededAgent string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO client_usage_daily (
-			user_id, client_type, install_id, activity_date, workspace_id,
-			client_version, os, first_active_at, last_active_at
-		)
-		VALUES ($1, 'web', gen_random_uuid(), CURRENT_DATE, $2, 'test', 'linux', now(), now())
-		RETURNING install_id::text
-	`, testUserID, testWorkspaceID).Scan(&clientUsageInstall); err != nil {
-		t.Fatalf("seed client_usage_daily: %v", err)
+		SELECT id::text FROM agent
+		WHERE workspace_id = $1
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1
+	`, testWorkspaceID).Scan(&seededAgent); err != nil {
+		t.Fatalf("look up a test-workspace agent: %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = testPool.Exec(ctx, `DELETE FROM client_usage_daily WHERE install_id = $1`, clientUsageInstall)
-	})
+	// task_usage_hourly and client_usage_daily have no `id` column, so the
+	// fixture writes them through InsertNoID with an explicit teardown key.
+	dbfx.InsertNoID(t, "task_usage_hourly", testutil.Cols{
+		"bucket_hour":        testutil.Raw("date_trunc('hour', now())"),
+		"workspace_id":       testWorkspaceID,
+		"runtime_id":         testRuntimeID,
+		"agent_id":           seededAgent,
+		"project_id":         nil,
+		"provider":           "Anthropic",
+		"model":              "instance-admin-test-model",
+		"input_tokens":       1200,
+		"output_tokens":      300,
+		"cache_read_tokens":  10,
+		"cache_write_tokens": 20,
+		"task_count":         3,
+		"event_count":        3,
+		"cost_usd_ticks":     5000,
+	}, "workspace_id = $1 AND model = $2", testWorkspaceID, "instance-admin-test-model")
+
+	clientUsageInstall := uuid.NewString()
+	dbfx.InsertNoID(t, "client_usage_daily", testutil.Cols{
+		"user_id":         testUserID,
+		"client_type":     "web",
+		"install_id":      clientUsageInstall,
+		"activity_date":   testutil.Raw("CURRENT_DATE"),
+		"workspace_id":    testWorkspaceID,
+		"client_version":  "test",
+		"os":              "linux",
+		"first_active_at": testutil.Raw("now()"),
+		"last_active_at":  testutil.Raw("now()"),
+	}, "install_id = $1", clientUsageInstall)
 
 	req, rec := instanceRequest(t, http.MethodGet, "/api/instance/overview?days=1&tz=UTC", "")
 	testHandler.GetInstanceOverview(rec, req)
