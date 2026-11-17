@@ -119,6 +119,12 @@ SMTP takes priority over Resend whenever `SMTP_HOST` is non-empty.
 
 For the exact allowlist evaluation order, see [Sign-in and signup](/auth-setup#signup-restrictions).
 
+### Instance administrator
+
+| Variable | Default | Description |
+|---|---|---|
+| `INSTANCE_ADMIN_EMAILS` | empty | Full email addresses that may read the instance-wide operator view, comma-separated. When set, those accounts can call `GET /api/instance/access` and `GET /api/instance/overview`; every other caller gets 403. Grants no workspace content access and performs no write action |
+
 ## Attachment storage
 
 When `S3_BUCKET` is unset, Multica uses local disk.

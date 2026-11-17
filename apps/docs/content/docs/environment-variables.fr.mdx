@@ -119,6 +119,12 @@ SMTP est prioritaire sur Resend dès que `SMTP_HOST` n'est pas vide.
 
 Pour l'ordre exact d'évaluation des listes d'autorisation, consultez [Connexion et inscription](/auth-setup#restrictions-dinscription).
 
+### Administrateur d'instance
+
+| Variable | Valeur par défaut | Description |
+|---|---|---|
+| `INSTANCE_ADMIN_EMAILS` | vide | Adresses e-mail complètes autorisées à lire la vue d'exploitation à l'échelle de l'instance, séparées par des virgules. Une fois définies, ces comptes peuvent appeler `GET /api/instance/access` et `GET /api/instance/overview` ; tous les autres appelants reçoivent 403. N'accorde aucun accès au contenu des espaces de travail et n'effectue aucune écriture |
+
 ## Stockage des pièces jointes
 
 Lorsque `S3_BUCKET` n'est pas défini, Multica utilise le disque local.

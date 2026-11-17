@@ -119,6 +119,12 @@ MULTICA_PUBLIC_URL=https://api.multica.example.com
 
 白名單的準確判斷順序見[登入與註冊](/auth-setup#註冊範圍控制)。
 
+### 實例管理員
+
+| 變數 | 預設值 | 說明 |
+|---|---|---|
+| `INSTANCE_ADMIN_EMAILS` | 空 | 允許讀取實例級營運視圖的完整電子郵件地址，逗號分隔。設定後這些帳號可呼叫 `GET /api/instance/access` 與 `GET /api/instance/overview`，其他呼叫方一律回傳 403。不授予工作區內容存取權限，也不含任何寫入操作 |
+
 ## 附件儲存
 
 沒有設定 `S3_BUCKET` 時，Multica 使用本地磁碟。

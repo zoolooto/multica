@@ -111,6 +111,38 @@ Things to know:
 
 > Note: setting `ALLOW_SIGNUP=false` enables invite-only account creation. A new user with a live pending workspace invitation can create an account with the invited email; users without an allowlist match or a valid invitation remain blocked. Invitations also permit emails outside configured allowlists when `ALLOW_SIGNUP=true`. Revocation does not delete accounts already created using an invitation or prevent those accounts from signing in. Combine this with `DISABLE_WORKSPACE_CREATION=true` when invitees must join an existing workspace instead of creating their own.
 
+### Instance Administrator (Optional)
+
+Every management screen in Multica is scoped to one workspace, and its roles (`owner` / `admin` / `member`) only apply inside that workspace. On a deployment with many teams, the person who runs the instance often has no way to answer basic operational questions without querying the database.
+
+`INSTANCE_ADMIN_EMAILS` grants a **read-only, instance-wide operator view** to the listed account emails:
+
+```dotenv
+INSTANCE_ADMIN_EMAILS=ops@example.com,platform-lead@example.com
+```
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /api/instance/access` | `{"is_instance_admin": true\|false}` for the calling account |
+| `GET /api/instance/overview?days=30&tz=Asia/Shanghai` | instance summary, all workspaces, all users, all agents/runtimes, and a daily usage series |
+
+`GET /api/instance/overview` covers:
+
+- **summary**: workspace / user / agent / runtime counts, online runtimes, open issues, and runs, failed runs, tokens and cost inside the window.
+- **workspaces**: owner, member / agent / runtime counts, online runtimes, open issues, last activity.
+- **users**: email, created-at, workspace memberships with each role, last client activity (empty for accounts that never used an official client).
+- **agents**: every cross-workspace agent with its workspace, owner, runtime provider / online state, model and last run.
+- **usage**: daily rows grouped by workspace, provider and model (tokens, cost, task count) for the last `days` days. `days` defaults to 30 and is capped at 365; `tz` defaults to the caller's stored timezone, then UTC.
+
+Things to know:
+
+- **Off by default.** An empty list disables the surface for everyone; there is no implicit administrator.
+- **Email match reads the database**, so personal access tokens and the CLI work too — the check is not tied to the browser cookie path.
+- **It is not a workspace role.** An instance administrator still is not a member of any workspace they were not invited to, and the grant adds no rights inside a workspace.
+- **Read-only.** There is no transfer, disable-login, archive or delete action, and no read of workspace content (issues, comments, chats). Those are deliberate follow-ups, not missing routes by accident.
+- **Agent credentials are refused.** A task token (`mat_`) cannot use the surface even if its owner is listed, so a prompt-injected agent cannot pull the whole instance's metadata through its owner.
+- **Restart to change it.** The list is read at boot, like the other self-host controls. The web UI does not yet render this surface; call the endpoints directly with a session token or PAT until it does.
+
 ### File Storage (Optional)
 
 Uploads and attachments are written to local disk by default. Set `S3_BUCKET` to
