@@ -438,6 +438,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowedEmailDomains:            splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
 		DisableWorkspaceCreation:       os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
 		WorkspaceCreationAllowedEmails: splitAndTrim(os.Getenv("WORKSPACE_CREATION_ALLOWED_EMAILS")),
+		InstanceAdminEmails:            splitAndTrim(os.Getenv("INSTANCE_ADMIN_EMAILS")),
 		VCSIntegrationEnabled:          os.Getenv("MULTICA_VCS_INTEGRATION_ENABLED") == "true",
 		PublicURL:                      strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")), "/"),
 		AppURL:                         appURLFromEnv(),
@@ -1822,6 +1823,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// Resolve that workspace from the row and check membership before minting
 		// a fresh URL; the workspace-scoped metadata route stays unchanged.
 		r.Get("/api/attachments/{id}/download-metadata", h.GetAttachmentForDownload)
+
+		// Instance-level operator surface (self-hosted). Read-only: it exists so
+		// the person who runs the deployment can see every workspace, account,
+		// agent/runtime and the instance's usage without direct SQL. Access is
+		// granted by INSTANCE_ADMIN_EMAILS and checked inside each handler (the
+		// gate is an account lookup, not a route middleware). No write action and
+		// no workspace content is reachable from here.
+		r.Route("/api/instance", func(r chi.Router) {
+			r.Get("/access", h.GetInstanceAccess)
+			r.Get("/overview", h.GetInstanceOverview)
+		})
 
 		r.Route("/api/workspaces", func(r chi.Router) {
 			r.Get("/", h.ListWorkspaces)

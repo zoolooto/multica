@@ -152,6 +152,10 @@ backend:
     # create workspaces. Empty = every signed-in user may create one.
     # disableWorkspaceCreation=true still blocks everyone.
     workspaceCreationAllowedEmails: ""
+    # Instance-level read-only operator view (/api/instance/*):
+    # comma-separated exact emails. Empty disables the surface. It is not a
+    # workspace role and grants no write action or workspace content access.
+    instanceAdminEmails: ""
     # Set to "1" or "true" to disable first-party anonymous self-host
     # telemetry collection and delivery.
     doNotTrack: ""

@@ -27,6 +27,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/entitlement"
 	"github.com/multica-ai/multica/server/internal/events"
 	"github.com/multica-ai/multica/server/internal/inboxread"
+	"github.com/multica-ai/multica/server/internal/instanceadmin"
 	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
 	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
 	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
@@ -87,6 +88,14 @@ type Config struct {
 	// decides who may create a workspace; it grants no cross-workspace
 	// visibility or admin rights (#9400).
 	WorkspaceCreationAllowedEmails []string
+	// InstanceAdminEmails, when non-empty, grants the instance-level read-only
+	// surface (/api/instance/*) to the listed account emails
+	// (INSTANCE_ADMIN_EMAILS, case-insensitive). Empty disables the feature for
+	// every caller. This is an operator view over the whole deployment, not a
+	// workspace role: it does not make the account an owner/admin/member of any
+	// workspace, and it grants no write action or workspace content access. See
+	// internal/instanceadmin.
+	InstanceAdminEmails []string
 	// VCSIntegrationEnabled gates the self-hosted Git provider integration
 	// (Forgejo / Gitea / GitLab) at the deployment level, independent of whether
 	// MULTICA_VCS_SECRET_KEY is set. It is the product boundary: the feature is
@@ -455,7 +464,14 @@ type Handler struct {
 	// so the feature degrades cleanly on deployments without a private key.
 	// Wired in cmd/server/router.go after New.
 	PRRefresh *ghsnapshot.Manager
-	cfg       Config
+	// InstanceAdmins is the config-granted set of accounts allowed to read the
+	// instance-wide model. Empty (the default) closes the surface entirely.
+	InstanceAdmins instanceadmin.Admins
+	// InstanceAdminStore loads that model. Nil when the handler was built
+	// without a DB executor; the overview endpoint then refuses with 503
+	// instead of panicking.
+	InstanceAdminStore instanceadmin.Reader
+	cfg                Config
 }
 
 func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
@@ -561,6 +577,14 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		cfg: cfg,
 	}
 	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
+	// Instance-level operator surface: the identity set comes from config, the
+	// read model from the same DB executor the rest of the handler uses. A
+	// handler built without one (some unit-test wirings) keeps a nil store, and
+	// the endpoint fails closed with 503.
+	h.InstanceAdmins = instanceadmin.NewAdmins(cfg.InstanceAdminEmails)
+	if executor != nil {
+		h.InstanceAdminStore = instanceadmin.NewStore(executor)
+	}
 	// The default passthrough scheduler reports sweeper-race recoveries so the
 	// daemon:register refresh fires even without the production batched wiring.
 	if passthrough, ok := h.HeartbeatScheduler.(*PassthroughHeartbeatScheduler); ok {
