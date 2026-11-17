@@ -36,6 +36,10 @@ import { NoAgentBanner } from "./no-agent-banner";
 import { ArchivedAgentBanner } from "./archived-agent-banner";
 import { AgentAccessRevokedBanner } from "./agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./runtime-required-banner";
+import { RealtimeDegradedBanner } from "./realtime-degraded-banner";
+import { useChatRealtimeWatchdog } from "./use-chat-realtime-watchdog";
+import { useWSStatus } from "@multica/core/realtime";
+import { isRealtimeDegraded } from "../lib/realtime-watchdog";
 import {
   pendingChatTasksOptions,
   chatKeys,
@@ -85,6 +89,16 @@ export function ChatWindow() {
   // MOUNTED when closed (it is only hidden, see isVisible below).
   const c = useChatController({ isActive: isOpen });
   const { wsId, activeSessionId, currentSession, activeAgent, pendingTask, pendingTaskId } = c;
+  // Until the workspace socket is back, the caches this window renders are
+  // going to miss events (GH #10805). Reconcile on a timer instead of waiting
+  // for the user to press Stop.
+  const wsStatus = useWSStatus();
+  useChatRealtimeWatchdog({
+    status: wsStatus,
+    wsId,
+    sessionId: activeSessionId,
+    taskId: pendingTaskId,
+  });
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(activeSessionId ?? ""),
   );
@@ -396,6 +410,12 @@ export function ChatWindow() {
       ) : (
         <OfflineBanner agentName={activeAgent?.name} availability={c.availability} />
       )}
+
+      {/* Realtime health is orthogonal to agent presence: a dead workspace
+       *  socket makes every chat cache stale without changing availability,
+       *  so it gets its own slot rather than competing with the banners
+       *  above (GH #10805). */}
+      {isRealtimeDegraded(wsStatus) && <RealtimeDegradedBanner />}
 
       <div className="px-4">
         <ChatAppRequests sessionId={activeSessionId} />

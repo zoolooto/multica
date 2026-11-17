@@ -77,6 +77,12 @@ vi.mock("./no-agent-banner", () => ({ NoAgentBanner: () => null }));
 vi.mock("./archived-agent-banner", () => ({ ArchivedAgentBanner: () => null }));
 vi.mock("./agent-access-revoked-banner", () => ({ AgentAccessRevokedBanner: () => null }));
 vi.mock("./runtime-required-banner", () => ({ RuntimeRequiredBanner: () => null }));
+vi.mock("./realtime-degraded-banner", () => ({ RealtimeDegradedBanner: () => null }));
+// No WSProvider in these tests; pin socket health so the watchdog is inert.
+vi.mock("@multica/core/realtime", () => ({
+  useWSStatus: () => "connected",
+  removeChatMessageFromCaches: vi.fn(),
+}));
 
 import { ChatWindow } from "./chat-window";
 

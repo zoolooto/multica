@@ -220,6 +220,9 @@
     "unstable": "{{name}} 的连接不稳定——回复可能延迟。",
     "offline": "{{name}} 离线——你的消息将在它上线后发送。"
   },
+  "realtime_banner": {
+    "degraded": "实时连接已断开——正在重连，回复与状态可能延迟。"
+  },
   "status_pill": {
     "stages": {
       "offline": "离线",

@@ -82,6 +82,12 @@ vi.mock("@multica/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.width < 768,
   useIsCompact: () => layout.width < 768,
 }));
+// The page reads workspace socket health for the degraded-realtime notice.
+// These tests never mount a WSProvider, so pin the status to healthy.
+vi.mock("@multica/core/realtime", () => ({
+  useWSStatus: () => "connected",
+  removeChatMessageFromCaches: vi.fn(),
+}));
 vi.mock("@multica/core/paths", () => ({
   useRequiredWorkspaceSlug: () => "acme",
   useWorkspacePaths: () => ({ chat: () => "/acme/chat" }),

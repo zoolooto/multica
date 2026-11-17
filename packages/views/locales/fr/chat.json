@@ -225,6 +225,9 @@
     "unstable": "La connexion de {{name}} est instable — les réponses peuvent être retardées.",
     "offline": "{{name}} est hors ligne — votre message sera remis à son retour."
   },
+  "realtime_banner": {
+    "degraded": "Connexion temps réel perdue — reconnexion en cours. Les réponses et les statuts peuvent être retardés."
+  },
   "status_pill": {
     "stages": {
       "offline": "Hors ligne",

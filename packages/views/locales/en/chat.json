@@ -225,6 +225,9 @@
     "unstable": "{{name}}'s connection is unstable — replies may be delayed.",
     "offline": "{{name}} is offline — your message will be delivered when they're back."
   },
+  "realtime_banner": {
+    "degraded": "Realtime connection lost — reconnecting. Replies and status may lag."
+  },
   "status_pill": {
     "stages": {
       "offline": "Offline",
