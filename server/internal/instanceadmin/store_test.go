@@ -145,6 +145,13 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 	dbfx.InsertNoID(t, "task_usage_hourly", usageRow(inWindow, otherWorkspace, otherRuntime, otherAgent, model, 200, 20, 400), "provider = $1", provider)
 	dbfx.InsertNoID(t, "task_usage_hourly", usageRow(beforeWindow, homeWorkspace, homeRuntime, homeAgent, staleModel, 999, 999, 999), "provider = $1", provider)
 
+	// Run counts read agent_task_queue for the same window; a failed task queued
+	// now must appear in both totals below.
+	dbfx.Task(t, homeAgent, testutil.Cols{
+		"status":     "failed",
+		"runtime_id": homeRuntime,
+	})
+
 	since := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	store := NewStore(testPool)
 
@@ -254,6 +261,14 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 		}
 		if overview.Summary.UncostedInputTokens < 150 {
 			t.Errorf("summary.uncosted_input_tokens = %d, want at least this test's 150", overview.Summary.UncostedInputTokens)
+		}
+		// Other suites add their own tasks to the window, so assert the floor
+		// this test created: the failed task must count as a run.
+		if overview.Summary.Runs < 1 {
+			t.Errorf("summary.runs = %d, want at least this test's 1", overview.Summary.Runs)
+		}
+		if overview.Summary.FailedRuns < 1 {
+			t.Errorf("summary.failed_runs = %d, want at least this test's 1", overview.Summary.FailedRuns)
 		}
 	})
 

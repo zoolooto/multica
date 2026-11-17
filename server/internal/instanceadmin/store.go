@@ -112,8 +112,12 @@ SELECT
     (SELECT COUNT(*) FROM agent_runtime ar WHERE ar.workspace_id = w.id)::int AS runtime_count,
     (SELECT COUNT(*) FROM agent_runtime ar
       WHERE ar.workspace_id = w.id AND ar.status = 'online')::int AS online_runtime_count,
+    -- issue_effective_status resolves custom status keys to their category, so
+    -- a workspace whose "shipped" / "wontfix" statuses are archived terminal
+    -- states does not count those issues as open (migrations/340, /494).
     (SELECT COUNT(*) FROM issue i
-      WHERE i.workspace_id = w.id AND i.status NOT IN ('done', 'cancelled'))::int AS open_issue_count,
+      WHERE i.workspace_id = w.id
+        AND issue_effective_status(i.workspace_id, i.status) NOT IN ('done', 'cancelled'))::int AS open_issue_count,
     GREATEST(
         w.updated_at,
         COALESCE((SELECT MAX(i.updated_at) FROM issue i WHERE i.workspace_id = w.id), w.updated_at)
@@ -316,7 +320,7 @@ ORDER BY w.name ASC, a.name ASC, a.id ASC
 func (s *Store) usage(ctx context.Context, since time.Time, tz string) ([]UsageRow, error) {
 	const query = `
 SELECT
-    DATE(tu.bucket_hour AT TIME ZONE $1) AS day,
+    DATE(tu.bucket_hour AT TIME ZONE $1::text) AS day,
     tu.workspace_id,
     COALESCE(w.name, '') AS workspace_name,
     LOWER(tu.provider) AS provider,
