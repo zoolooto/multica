@@ -16,6 +16,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useReducedMotion } from "@multica/core/appearance";
 import { api } from "@multica/core/api";
 import { isAgentRuntimeBound } from "@multica/core/agents";
+import { useWSStatus } from "@multica/core/realtime";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { ActionShortcutKeycaps } from "../../common/shortcut-keycaps";
@@ -38,7 +39,6 @@ import { AgentAccessRevokedBanner } from "./agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./runtime-required-banner";
 import { RealtimeDegradedBanner } from "./realtime-degraded-banner";
 import { useChatRealtimeWatchdog } from "./use-chat-realtime-watchdog";
-import { useWSStatus } from "@multica/core/realtime";
 import { isRealtimeDegraded } from "../lib/realtime-watchdog";
 import {
   pendingChatTasksOptions,
@@ -89,12 +89,12 @@ export function ChatWindow() {
   // MOUNTED when closed (it is only hidden, see isVisible below).
   const c = useChatController({ isActive: isOpen });
   const { wsId, activeSessionId, currentSession, activeAgent, pendingTask, pendingTaskId } = c;
-  // Until the workspace socket is back, the caches this window renders are
-  // going to miss events (GH #10805). Reconcile on a timer instead of waiting
-  // for the user to press Stop.
+  // Until the workspace socket is back, the caches this window renders will
+  // miss events, so reconcile on a timer — but only while the window is open.
   const wsStatus = useWSStatus();
   useChatRealtimeWatchdog({
     status: wsStatus,
+    enabled: isOpen,
     wsId,
     sessionId: activeSessionId,
     taskId: pendingTaskId,
@@ -411,10 +411,8 @@ export function ChatWindow() {
         <OfflineBanner agentName={activeAgent?.name} availability={c.availability} />
       )}
 
-      {/* Realtime health is orthogonal to agent presence: a dead workspace
-       *  socket makes every chat cache stale without changing availability,
-       *  so it gets its own slot rather than competing with the banners
-       *  above (GH #10805). */}
+      {/* Realtime health is orthogonal to agent presence, so it gets its own
+       *  slot rather than competing with the banners above. */}
       {isRealtimeDegraded(wsStatus) && <RealtimeDegradedBanner />}
 
       <div className="px-4">

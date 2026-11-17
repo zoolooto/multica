@@ -226,7 +226,7 @@
     "offline": "{{name}} está desconectado: tu mensaje se entregará cuando vuelva."
   },
   "realtime_banner": {
-    "degraded": "Se perdió la conexión en tiempo real: reconectando. Las respuestas y los estados pueden tardar."
+    "degraded": "La conexión en tiempo real no está disponible: reconectando. Las respuestas y los estados pueden tardar."
   },
   "status_pill": {
     "stages": {

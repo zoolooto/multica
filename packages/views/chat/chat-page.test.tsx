@@ -83,10 +83,11 @@ vi.mock("@multica/ui/hooks/use-mobile", () => ({
   useIsCompact: () => layout.width < 768,
 }));
 // The page reads workspace socket health for the degraded-realtime notice.
-// These tests never mount a WSProvider, so pin the status to healthy.
-vi.mock("@multica/core/realtime", () => ({
-  useWSStatus: () => "connected",
-  removeChatMessageFromCaches: vi.fn(),
+// These tests never mount a WSProvider, so the status is pinned per test.
+const realtime = vi.hoisted(() => ({ status: "connected" as "connected" | "reconnecting" }));
+vi.mock("@multica/core/realtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/realtime")>()),
+  useWSStatus: () => realtime.status,
 }));
 vi.mock("@multica/core/paths", () => ({
   useRequiredWorkspaceSlug: () => "acme",
@@ -259,6 +260,7 @@ function renderPage(search: string, { strict = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  realtime.status = "connected";
   storeRef.current = { activeSessionId: null };
   storeListeners.clear();
   availableAgentsRef.current = [agent];
@@ -499,5 +501,24 @@ describe("ChatPage responsive layout", () => {
       screen.getByRole("button", { name: "select-thread" }),
     ).toBeInTheDocument();
     expect(screen.getByText("chat-input")).toBeInTheDocument();
+  });
+});
+
+describe("ChatPage realtime health", () => {
+  it("announces a degraded socket above the conversation", () => {
+    realtime.status = "reconnecting";
+    storeRef.current = { activeSessionId: "session-1" };
+    renderPage("session=session-1");
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enChat.realtime_banner.degraded,
+    );
+  });
+
+  it("stays silent while the socket is healthy", () => {
+    storeRef.current = { activeSessionId: "session-1" };
+    renderPage("session=session-1");
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

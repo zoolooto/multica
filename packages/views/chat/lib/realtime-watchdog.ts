@@ -18,9 +18,11 @@ export const CHAT_WATCHDOG_POLL_MS = 10_000;
  *
  * `offline` is deliberately excluded: it means no connection is wanted
  * (signed out, or no workspace open), not that realtime is failing — there is
- * nothing to reconcile and no banner to show. `connecting` is the first
- * attempt of a fresh client and settles within a round trip; only a client
- * that WAS connected and lost the socket lands in `reconnecting`.
+ * nothing to reconcile and no banner to show. `connecting` is the very first
+ * attempt of a fresh client and settles within a round trip. Every later
+ * attempt — including the first retry after the first attempt failed — is
+ * `reconnecting`, so a client whose very first connection never succeeded is
+ * reported as degraded too, which is correct: it is receiving no events.
  */
 export function isRealtimeDegraded(status: WSStatus): boolean {
   return status === "reconnecting";

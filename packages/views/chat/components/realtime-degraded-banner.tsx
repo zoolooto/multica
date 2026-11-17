@@ -8,12 +8,9 @@ import { useT } from "../../i18n";
 /**
  * Inline notice for a workspace socket that is down.
  *
- * Without it the chat surface looks exactly like a healthy one while every
- * cache is stale (`staleTime: Infinity` + event-driven updates), which is what
- * made GH #10805 undiagnosable from the UI: the run looked frozen, and only a
- * manual Stop — which forces a refetch — revealed the reply. The banner is
- * paired with `useChatRealtimeWatchdog`, so the state also stops being wrong;
- * this part exists so the user knows why the lag happened.
+ * Chat caches advance on WS events only, so the surface looks identical
+ * whether a turn is running or the connection dropped. The notice names the
+ * cause; `useChatRealtimeWatchdog` fixes the state behind it.
  */
 export function RealtimeDegradedBanner() {
   const { t } = useT("chat");

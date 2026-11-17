@@ -7,7 +7,8 @@ import { Button } from "@multica/ui/components/ui/button";
 import { IconButton } from "@multica/ui/components/common/icon-button";
 import { useIsCompact } from "@multica/ui/hooks/use-mobile";
 import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@multica/core/paths";
-import { getCurrentSlug, getCurrentWsId } from "@multica/core/platform";
+import { getCurrentSlug } from "@multica/core/platform";
+import { useWSStatus } from "@multica/core/realtime";
 import { useChatStore } from "@multica/core/chat";
 import { chatQuickActionsPendingOptions } from "@multica/core/chat/queries";
 import { useRegenerateChatQuickActions } from "@multica/core/chat/mutations";
@@ -40,7 +41,6 @@ import { RuntimeRequiredBanner } from "./components/runtime-required-banner";
 import { RealtimeDegradedBanner } from "./components/realtime-degraded-banner";
 import { useChatRealtimeWatchdog } from "./components/use-chat-realtime-watchdog";
 import { isRealtimeDegraded } from "./lib/realtime-watchdog";
-import { useWSStatus } from "@multica/core/realtime";
 import { ChatAppRequests } from "../common/app-requests";
 import { useRegisterCommandBarContext } from "../search/register-context";
 
@@ -75,16 +75,15 @@ export function ChatPage() {
   const isCurrentChatRoute = pathname === wsPaths.chat();
   const isCompact = useIsCompact();
 
-  const c = useChatController({
-    isActive: isCurrentChatRoute && getCurrentSlug() === workspaceSlug,
-  });
-  // Chat caches are WS-event-driven with staleTime: Infinity, so a lost socket
-  // freezes the open conversation until a manual Stop (GH #10805). Reconcile
-  // against the API while it is down and say so on screen.
+  const isActive = isCurrentChatRoute && getCurrentSlug() === workspaceSlug;
+  const c = useChatController({ isActive });
+  // A lost socket freezes the open conversation until a manual Stop, so
+  // reconcile against the API while it is down and say so on screen.
   const wsStatus = useWSStatus();
   useChatRealtimeWatchdog({
     status: wsStatus,
-    wsId: getCurrentWsId(),
+    enabled: isActive,
+    wsId: c.wsId,
     sessionId: c.activeSessionId,
     taskId: c.pendingTaskId,
   });
@@ -398,8 +397,8 @@ export function ChatPage() {
         <OfflineBanner agentName={c.activeAgent?.name} availability={c.availability} />
       )}
 
-      {/* Workspace socket health, independent of agent presence: without it a
-       *  stale conversation looks exactly like a running one (GH #10805). */}
+      {/* Socket health is orthogonal to agent presence: a dead socket makes a
+       *  stale conversation look exactly like a running one. */}
       {isRealtimeDegraded(wsStatus) && <RealtimeDegradedBanner />}
 
       <div className="px-4">

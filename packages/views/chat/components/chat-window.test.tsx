@@ -77,11 +77,11 @@ vi.mock("./no-agent-banner", () => ({ NoAgentBanner: () => null }));
 vi.mock("./archived-agent-banner", () => ({ ArchivedAgentBanner: () => null }));
 vi.mock("./agent-access-revoked-banner", () => ({ AgentAccessRevokedBanner: () => null }));
 vi.mock("./runtime-required-banner", () => ({ RuntimeRequiredBanner: () => null }));
-vi.mock("./realtime-degraded-banner", () => ({ RealtimeDegradedBanner: () => null }));
-// No WSProvider in these tests; pin socket health so the watchdog is inert.
-vi.mock("@multica/core/realtime", () => ({
-  useWSStatus: () => "connected",
-  removeChatMessageFromCaches: vi.fn(),
+// No WSProvider in these tests; the socket health is pinned per test.
+const realtime = vi.hoisted(() => ({ status: "connected" as "connected" | "reconnecting" }));
+vi.mock("@multica/core/realtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/realtime")>()),
+  useWSStatus: () => realtime.status,
 }));
 
 import { ChatWindow } from "./chat-window";
@@ -114,8 +114,24 @@ function renderWindow() {
 
 beforeEach(() => {
   resize.isAtMax = false;
+  realtime.status = "connected";
   act(() => {
     useChatStore.setState({ isOpen: true, isExpanded: false, activeSessionId: session.id });
+  });
+});
+
+describe("ChatWindow realtime health", () => {
+  it("announces a degraded socket above the conversation", () => {
+    realtime.status = "reconnecting";
+    renderWindow();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      enChat.realtime_banner.degraded,
+    );
+  });
+
+  it("stays silent while the socket is healthy", () => {
+    renderWindow();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });
 

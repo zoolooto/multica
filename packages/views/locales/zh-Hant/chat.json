@@ -221,7 +221,7 @@
     "offline": "{{name}} 離線——你的訊息將在它上線後傳送。"
   },
   "realtime_banner": {
-    "degraded": "即時連線已斷開——正在重新連線，回覆與狀態可能延遲。"
+    "degraded": "即時連線無法使用——正在重新連線，回覆與狀態可能延遲。"
   },
   "status_pill": {
     "stages": {

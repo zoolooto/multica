@@ -33,29 +33,39 @@
 
 新增一个聊天实时看门狗（客户端）：
 
-- `packages/views/chat/lib/realtime-watchdog.ts`：纯逻辑常量与判定（`CHAT_WATCHDOG_POLL_MS`、`shouldWatchChat`）。
-- `packages/views/chat/components/use-chat-realtime-watchdog.ts`：hook。
-  - 触发条件：`useWSStatus()` 为 `reconnecting`（存在 WS 客户端但没连上；`offline` 表示未登录/未选工作区，不算异常）且当前有打开的会话。
-  - 行为：进入异常时立即对账一次，之后按固定间隔（10s）invalidate `chatKeys.pendingTask(sessionId)`、`chatKeys.messagesPage(sessionId)`、`chatKeys.taskMessages(taskId)`（有 task id 时）以及聚合 `pendingTasks(wsId)`；恢复正常或卸载即停止。
-  - 对账走既有 query key，复用服务端权威接口，不做乐观写。
-- `packages/views/chat/components/realtime-degraded-banner.tsx`：在聊天输入区上方显示「实时连接不可用，内容可能延迟，正在重连」；连接恢复即消失。
-- `chat-window.tsx` 接入 banner 与 hook；`chat.json` 8 个语言包补 key（parity 测试要求）。
+- `packages/views/chat/lib/realtime-watchdog.ts`：纯逻辑常量与判定（`CHAT_WATCHDOG_POLL_MS`、`isRealtimeDegraded`）。
+- `packages/views/chat/components/use-chat-realtime-watchdog.ts`：hook。两条触发路径：
+  - **socket 已被判定异常**（`useWSStatus()` 为 `reconnecting`；`offline` 表示未登录/未选工作区，`connecting` 是首次握手，都不算）：立即对账一次（含 `messagesPage` 转录），之后每 10s 对账 `pendingTasks(wsId)`、`pendingTask(sessionId)`、`taskMessages(taskId)`（UUID 有效时）。
+  - **有回合正在进行**（即使 socket 自报 `connected`）：每 20s 只对账 `pendingTasks(wsId)` 与 `pendingTask(sessionId)`。这条覆盖报告里的主症状——半开连接不触发 `onclose`，客户端永远不知道自己断了，终态帧丢了也没人重取；只轮询轻量的 pending 键，代价只在回合进行中存在。
+  - 回落：回合从「有」变为「无」，或换成下一个 task id 时，对转录 `messagesPage(sessionId)` 对账一次 —— 否则会出现「pending 已清空、回复仍不显示」。
+  - 门控：只在当前会话确实在屏上（页面路由命中 / 浮动窗已打开）时工作，关闭的浮动窗不轮询。
+- `packages/views/chat/components/realtime-degraded-banner.tsx`：在聊天输入区上方显示「实时连接不可用，正在重连，回复与状态可能延迟」；连接恢复即消失。
+- `chat-page.tsx` 与 `chat-window.tsx` 接入 banner 与 hook；`chat.json` 8 个语言包补 key（parity 测试要求）。
 
 ## 测试计划
 
+`packages/views/chat/lib/realtime-watchdog.test.ts`：状态矩阵（`reconnecting` 为降级，`connected` / `connecting` / `offline` 不是）。
+
 `packages/views/chat/components/use-chat-realtime-watchdog.test.tsx`（QueryClient + renderHook，假定时器）：
 
-- `connected`：不立即对账、不起定时器；
-- `reconnecting`：立即对账一次，之后按间隔重复，恢复 `connected` 后停止；
-- `offline`（未登录/未选工作区）：不做任何对账；
-- 无打开会话：不做任何对账；
-- 有 task id 时对账包含 `taskMessages`；
+- `connected` 且无回合：不做任何对账；
+- `reconnecting`：立即对账（含转录），之后按间隔只轮询轻量键；
+- `connected` 且有回合：按较慢间隔轮询 pending，不碰转录与时间线；
+- 回合结束：对转录对账一次；
+- 恢复 `connected` 后停止；二次断线重新开始；
+- 有 UUID task id 时才动 `taskMessages`；
+- 无打开会话、或会话不在屏上：不做任何对账；
 - 卸载后定时器清空。
 
-`packages/views/chat/components/realtime-degraded-banner.test.tsx`：异常显示、正常不显示、文案走 i18n。
+`packages/views/chat/components/realtime-degraded-banner.test.tsx`：文案走 i18n、`role=status` + `aria-live`。
+
+`chat-window.test.tsx` / `chat-page.test.tsx`：可变 socket 状态下，降级时 banner 出现、健康时不出现（页面接线回归）。
 
 ## 不做的事（取舍记录）
 
 - 不去猜根因（daemon 没产出流 / 服务端没投递 / 客户端丢帧）：三者需要报告人的日志与任务 ID 才能区分；改错层的风险大于收益。
-- 不改服务端广播与重连语义：现有「断开→重连→全量 invalidate」是对的，本次只补「没检测到断开」的盲区。
+- 不改服务端广播与重连语义：现有「断开→重连→全量 invalidate」是对的，本次只补「客户端没检测到断开 / 检测到了但还没重取」的盲区。
 - 不引入 WebSocket 心跳超时判死：`ws-client` 已有 ping/pong 与服务端写超时，另加超时阈值属于协议级改动，超出本票。
+- 不把「健康时也全量轮询转录」当成默认行为：转录是无限分页查询，全量失效会按页放大请求；因此健康态只轮询 pending，转录只在回合结束或确认断线时重取。
+- 不补客户端事件时间戳/任务 ID 的诊断日志：那属于后续与上游维护者对齐诊断口径的事项，本票只做自愈与可见性。
+
