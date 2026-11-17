@@ -145,7 +145,7 @@ If an open issue with the same title (case-insensitive, extra spaces ignored) al
 
 For sequential PR delivery, use `issue create --title "..." --pr-auto-complete off` or `issue update <id> --pr-auto-complete off` to keep that issue's status when PRs merge. Use `--pr-auto-complete on` to restore the workspace rule; this takes effect at the next PR event. `issue pull-requests <id>` shows the issue override, workspace setting, target status, and decision state, even with no linked PRs. Supported servers save the creation override atomically; older servers receive a follow-up PUT. If that fails, the CLI reports the created issue ID and an update command to retry, so do not repeat the create.
 
-Hear back about an issue you created, instead of polling it: `--wake-me-on` subscribes the agent running the command to the new issue's `in_review`, `blocked`, and failed runs.
+Hear back about an issue you created, instead of polling it: `--wake-me-on` subscribes the agent running the command to the new issue's `in_review`, `blocked`, and failed runs. It needs an agent run's identity; from a terminal, create the issue first and then subscribe the agent with `multica issue wakeup create <issue> --agent-id <agent>`.
 
 ```bash
 multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed

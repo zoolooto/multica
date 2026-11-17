@@ -75,16 +75,24 @@ func sameWakeupSignature(existing db.IssueWakeup, params db.CreateIssueWakeupPar
 		existing.OnTimeout != params.OnTimeout ||
 		existing.ExpirySeconds != params.ExpirySeconds ||
 		existing.MaxFires != params.MaxFires ||
-		!sameWakeupDeadline(existing.ExpiresAt, params.ExpiresAt) {
+		!sameWakeupDeadline(existing, params) {
 		return false
 	}
 	return sameWakeupEvents(existing.EventTypes, params.EventTypes) &&
 		bytes.Equal(canonicalWakeupPayload(existing.Condition), canonicalWakeupPayload(params.Condition))
 }
 
-// sameWakeupDeadline compares optional deadlines by value: pgx round-trips the
+// sameWakeupDeadline compares the two ways a rule can carry a deadline. A
+// relative one is stored as both the duration and the instant it resolved to,
+// and two registrations of the same `expires_in` legitimately resolve to
+// different instants, so the duration is the signature whenever both rules
+// carry one. Absolute deadlines still compare by value: pgx round-trips the
 // same instant in a different location, so a struct comparison would miss it.
-func sameWakeupDeadline(a, b pgtype.Timestamptz) bool {
+func sameWakeupDeadline(existing db.IssueWakeup, params db.CreateIssueWakeupParams) bool {
+	if existing.ExpirySeconds.Valid || params.ExpirySeconds.Valid {
+		return existing.ExpirySeconds == params.ExpirySeconds
+	}
+	a, b := existing.ExpiresAt, params.ExpiresAt
 	if a.Valid != b.Valid {
 		return false
 	}

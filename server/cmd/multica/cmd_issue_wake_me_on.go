@@ -98,6 +98,9 @@ func registerCreateWakes(ctx context.Context, client *cli.APIClient, created map
 	var lines []string
 	denied := false
 	for _, state := range states {
+		if !slices.Contains(wakeMeOnStates, state) {
+			return fmt.Errorf("unknown --wake-me-on state %q", state)
+		}
 		var row map[string]any
 		if err := client.PostJSON(ctx, path, wakeMeOnBody(state), &row); err != nil {
 			failed = append(failed, state)

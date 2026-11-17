@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -88,6 +89,39 @@ func TestIssueWakeupCreateIsIdempotentForIdenticalConditionRules(t *testing.T) {
 	second := wakeCreate(t, f, s, issue, in)
 	if first.ID != second.ID {
 		t.Fatalf("reordered condition keys made a new rule: %s", util.UUIDToString(second.ID))
+	}
+}
+
+// A relative deadline resolves to a different instant on every registration,
+// so the duration is what makes the same wait the same rule. Registering
+// `--expires-in 72h` twice must not add a second live rule.
+func TestIssueWakeupCreateMatchesARelativeDeadline(t *testing.T) {
+	f, s, issue, agent := wakeFixture(t)
+	in := WakeupInput{
+		AgentID: agent, Kind: "event", Mode: "continuous",
+		EventTypes: []string{"comment.created"}, Instruction: "Wait for the answer",
+		ExpiresInSeconds: 3600,
+	}
+	first := wakeCreate(t, f, s, issue, in)
+	if again := wakeCreate(t, f, s, issue, in); again.ID != first.ID {
+		t.Fatalf("same relative deadline made a new rule: %s then %s", util.UUIDToString(first.ID), util.UUIDToString(again.ID))
+	}
+	if n := f.Count(t, "SELECT count(*) FROM issue_wakeup WHERE issue_id=$1", issue); n != 1 {
+		t.Fatalf("%d rules rows, want 1", n)
+	}
+	// A different duration is a different wait, and an absolute deadline is a
+	// different shape, so neither may be folded into the first rule.
+	in.ExpiresInSeconds = 7200
+	if got := wakeCreate(t, f, s, issue, in); got.ID == first.ID {
+		t.Fatal("a different deadline reused the first rule")
+	}
+	at := time.Now().Add(3 * time.Hour)
+	in = WakeupInput{
+		AgentID: agent, Kind: "event", Mode: "continuous",
+		EventTypes: []string{"comment.created"}, Instruction: "Wait for the answer", ExpiresAt: &at,
+	}
+	if got := wakeCreate(t, f, s, issue, in); got.ID == first.ID {
+		t.Fatal("an absolute deadline reused a relative rule")
 	}
 }
 

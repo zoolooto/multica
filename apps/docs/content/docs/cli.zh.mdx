@@ -145,7 +145,7 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 
 一个任务要依次提交多个 PR 时，用 `issue create --title "..." --pr-auto-complete off` 或 `issue update <id> --pr-auto-complete off`，让这个任务在 PR 合并后保持原状态。用 `--pr-auto-complete on` 恢复工作区规则，从下一次 PR 事件起生效。`issue pull-requests <id>` 会显示任务开关、工作区开关、目标状态和判断结果，没有关联 PR 时也会显示。支持该字段的服务端会在创建事务内保存开关；旧服务端会补调一次 PUT，失败时 CLI 会给出已创建的任务 ID 和重试用的 update 命令，请勿重复创建。
 
-要跟进自己创建的任务，不必反复轮询：`--wake-me-on` 会让运行这条命令的智能体在新任务进入 `in_review`、被标记 `blocked`、或在该任务上的运行失败时被唤醒。
+要跟进自己创建的任务，不必反复轮询：`--wake-me-on` 会让运行这条命令的智能体在新任务进入 `in_review`、被标记 `blocked`、或在该任务上的运行失败时被唤醒。它需要智能体运行的身份；在终端里可以先建任务，再用 `multica issue wakeup create <任务> --agent-id <智能体>` 给智能体挂上。
 
 ```bash
 multica issue create --title "审计这次迁移" --wake-me-on in_review,blocked,failed
