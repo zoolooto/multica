@@ -74,43 +74,59 @@ type AgentSummary struct {
 // and model. The dimensions are kept separate so a caller can aggregate by
 // any of them; the day is already projected into the viewer's timezone.
 //
-// CostUSDTicks only counts rows the provider itself priced (Cursor's auto
-// model, for one, bills in credits instead); those rows still contribute their
-// tokens, with zero cost. The workspace dashboard splits the same two cases
-// into priced and unpriced token columns; this report keeps one cost total and
-// says so in the operator docs rather than growing two more columns.
+// Cost follows task_usage_hourly's two-sided contract. CostUSDTicks is the
+// provider-reported figure (1e-10 USD) and covers only rows the provider
+// priced; Uncosted*Tokens are the tokens that still need a static rate-table
+// estimate, exactly as the workspace dashboard splits them. An instance report
+// cannot do that estimation itself — each workspace may carry custom pricing,
+// which the server does not know — so the split is exposed instead of a made-up
+// total.
 type UsageRow struct {
-	Date             string `json:"date"`
-	WorkspaceID      string `json:"workspace_id"`
-	WorkspaceName    string `json:"workspace_name"`
-	Provider         string `json:"provider"`
-	Model            string `json:"model"`
-	InputTokens      int64  `json:"input_tokens"`
-	OutputTokens     int64  `json:"output_tokens"`
-	CacheReadTokens  int64  `json:"cache_read_tokens"`
-	CacheWriteTokens int64  `json:"cache_write_tokens"`
-	CostUSDTicks     int64  `json:"cost_usd_ticks"`
-	TaskCount        int64  `json:"task_count"`
+	Date                 string `json:"date"`
+	WorkspaceID          string `json:"workspace_id"`
+	WorkspaceName        string `json:"workspace_name"`
+	Provider             string `json:"provider"`
+	Model                string `json:"model"`
+	InputTokens          int64  `json:"input_tokens"`
+	OutputTokens         int64  `json:"output_tokens"`
+	CacheReadTokens      int64  `json:"cache_read_tokens"`
+	CacheWriteTokens     int64  `json:"cache_write_tokens"`
+	CostUSDTicks         int64  `json:"cost_usd_ticks"`
+	UncostedInputTokens  int64  `json:"uncosted_input_tokens"`
+	UncostedOutputTokens int64  `json:"uncosted_output_tokens"`
+	UncostedCacheRead    int64  `json:"uncosted_cache_read_tokens"`
+	UncostedCacheWrite   int64  `json:"uncosted_cache_write_tokens"`
+	TaskCount            int64  `json:"task_count"`
 }
 
 // Summary is the instance-level headline: totals that hold regardless of the
 // selected workspace (object counts) plus activity confined to the requested
-// window (runs, failures, tokens, cost). CostUSDTicks follows UsageRow's
-// priced-rows-only rule.
+// window (runs, failures, tokens, cost).
+//
+// The two halves count different populations on purpose. AgentCount counts
+// user-facing agents that exist now (archived and kind='system' carriers are
+// excluded); Runs counts every task queued in the window, including tasks of
+// agents archived since — activity that happened did happen. Cost follows
+// UsageRow's two-sided rule: CostUSDTicks is provider-reported, and the
+// Uncosted*Tokens totals are what a consumer still has to price.
 type Summary struct {
-	WorkspaceCount     int   `json:"workspace_count"`
-	UserCount          int   `json:"user_count"`
-	AgentCount         int   `json:"agent_count"`
-	RuntimeCount       int   `json:"runtime_count"`
-	OnlineRuntimeCount int   `json:"online_runtime_count"`
-	OpenIssueCount     int   `json:"open_issue_count"`
-	Runs               int   `json:"runs"`
-	FailedRuns         int   `json:"failed_runs"`
-	InputTokens        int64 `json:"input_tokens"`
-	OutputTokens       int64 `json:"output_tokens"`
-	CacheReadTokens    int64 `json:"cache_read_tokens"`
-	CacheWriteTokens   int64 `json:"cache_write_tokens"`
-	CostUSDTicks       int64 `json:"cost_usd_ticks"`
+	WorkspaceCount       int   `json:"workspace_count"`
+	UserCount            int   `json:"user_count"`
+	AgentCount           int   `json:"agent_count"`
+	RuntimeCount         int   `json:"runtime_count"`
+	OnlineRuntimeCount   int   `json:"online_runtime_count"`
+	OpenIssueCount       int   `json:"open_issue_count"`
+	Runs                 int   `json:"runs"`
+	FailedRuns           int   `json:"failed_runs"`
+	InputTokens          int64 `json:"input_tokens"`
+	OutputTokens         int64 `json:"output_tokens"`
+	CacheReadTokens      int64 `json:"cache_read_tokens"`
+	CacheWriteTokens     int64 `json:"cache_write_tokens"`
+	CostUSDTicks         int64 `json:"cost_usd_ticks"`
+	UncostedInputTokens  int64 `json:"uncosted_input_tokens"`
+	UncostedOutputTokens int64 `json:"uncosted_output_tokens"`
+	UncostedCacheRead    int64 `json:"uncosted_cache_read_tokens"`
+	UncostedCacheWrite   int64 `json:"uncosted_cache_write_tokens"`
 }
 
 // Overview is the whole instance read model in one payload. It is returned in

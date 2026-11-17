@@ -66,12 +66,18 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 	ctx := context.Background()
 	unique := time.Now().UnixNano()
 
+	const provider = "instance_store_provider"
+	const runtimeProvider = "instance_store_runtime"
+	const model = "instance-store-model"
+	const staleModel = "instance-store-stale-model"
+
 	homeUser := dbfx.User(t, "Instance Store Home", "instance-store-home@multica.ai")
 	homeWorkspace := dbfx.Workspace(t, "Instance Store Home", fmt.Sprintf("instance-store-home-%d", unique))
 	dbfx.Member(t, homeWorkspace, homeUser, "owner")
 	homeRuntime := dbfx.Runtime(t, "instance-store-home-runtime", testutil.Cols{
 		"workspace_id": homeWorkspace,
 		"owner_id":     homeUser,
+		"provider":     runtimeProvider,
 	})
 	homeAgent := dbfx.Agent(t, "instance-store-home-agent", homeRuntime, testutil.Cols{
 		"workspace_id": homeWorkspace,
@@ -84,6 +90,7 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 	otherRuntime := dbfx.Runtime(t, "instance-store-other-runtime", testutil.Cols{
 		"workspace_id": otherWorkspace,
 		"owner_id":     otherUser,
+		"provider":     runtimeProvider,
 	})
 	otherAgent := dbfx.Agent(t, "instance-store-other-agent", otherRuntime, testutil.Cols{
 		"workspace_id": otherWorkspace,
@@ -103,27 +110,40 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 		"kind":         "system",
 	})
 
-	const provider = "instance_store_provider"
-	const model = "instance-store-model"
-	const staleModel = "instance-store-stale-model"
 	// 2020-01-01 20:00 UTC is already 2020-01-02 in Asia/Shanghai, which is
 	// what makes the timezone assertion meaningful.
 	inWindow := time.Date(2020, 1, 1, 20, 0, 0, 0, time.UTC)
 	beforeWindow := time.Date(2019, 12, 31, 12, 0, 0, 0, time.UTC)
 
-	insertUsage := `
-		INSERT INTO task_usage_hourly (
-			bucket_hour, workspace_id, runtime_id, agent_id, project_id,
-			provider, model, input_tokens, output_tokens,
-			cache_read_tokens, cache_write_tokens, task_count, event_count,
-			cost_usd_ticks
-		)
-		VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, 0, 0, 1, 1, $9)
-	`
-	dbfx.Exec(t, insertUsage, inWindow, homeWorkspace, homeRuntime, homeAgent, provider, model, 100, 10, 300)
-	dbfx.Exec(t, insertUsage, inWindow, otherWorkspace, otherRuntime, otherAgent, provider, model, 200, 20, 400)
-	dbfx.Exec(t, insertUsage, beforeWindow, homeWorkspace, homeRuntime, homeAgent, provider, staleModel, 999, 999, 999)
-	dbfx.Cleanup(t, `DELETE FROM task_usage_hourly WHERE provider = $1`, provider)
+	usageRow := func(bucket time.Time, workspace, runtime, agent, modelName string, input, output, cost int64) testutil.Cols {
+		return testutil.Cols{
+			"bucket_hour":        bucket,
+			"workspace_id":       workspace,
+			"runtime_id":         runtime,
+			"agent_id":           agent,
+			"project_id":         nil,
+			"provider":           provider,
+			"model":              modelName,
+			"input_tokens":       input,
+			"output_tokens":      output,
+			"cache_read_tokens":  0,
+			"cache_write_tokens": 0,
+			// Half of the input is priced by the provider, half still needs the
+			// static rate table; the report must carry both halves separately.
+			"cost_usd_ticks":              cost,
+			"uncosted_input_tokens":       input / 2,
+			"uncosted_output_tokens":      output / 2,
+			"uncosted_cache_read_tokens":  0,
+			"uncosted_cache_write_tokens": 0,
+			"task_count":                  1,
+			"event_count":                 1,
+		}
+	}
+	// task_usage_hourly has no `id` column, so the fixture needs an explicit
+	// teardown key (the provider marker).
+	dbfx.InsertNoID(t, "task_usage_hourly", usageRow(inWindow, homeWorkspace, homeRuntime, homeAgent, model, 100, 10, 300), "provider = $1", provider)
+	dbfx.InsertNoID(t, "task_usage_hourly", usageRow(inWindow, otherWorkspace, otherRuntime, otherAgent, model, 200, 20, 400), "provider = $1", provider)
+	dbfx.InsertNoID(t, "task_usage_hourly", usageRow(beforeWindow, homeWorkspace, homeRuntime, homeAgent, staleModel, 999, 999, 999), "provider = $1", provider)
 
 	since := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	store := NewStore(testPool)
@@ -168,6 +188,28 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 			if row.Model == staleModel {
 				t.Errorf("row before the cutoff leaked into the window: %+v", row)
 			}
+			if row.WorkspaceID == homeWorkspace && row.Model == model && row.UncostedInputTokens != 50 {
+				t.Errorf("uncosted_input_tokens = %d, want 50", row.UncostedInputTokens)
+			}
+		}
+	})
+
+	t.Run("an empty window still returns arrays", func(t *testing.T) {
+		// The JSON contract is a list, never null, even when a section has no
+		// rows: a consumer must not have to null-check. A cutoff far in the
+		// future empties the window no matter what else is in the database.
+		future, err := store.Load(ctx, time.Date(2999, 1, 1, 0, 0, 0, 0, time.UTC), "UTC")
+		if err != nil {
+			t.Fatalf("load an empty window: %v", err)
+		}
+		if future.Usage == nil {
+			t.Error("usage is nil for an empty window, want an empty slice")
+		}
+		if len(future.Usage) != 0 {
+			t.Errorf("usage has %d rows in a window that ends before any data", len(future.Usage))
+		}
+		if future.Workspaces == nil || future.Users == nil || future.Agents == nil {
+			t.Error("a list section is nil, want an empty slice")
 		}
 	})
 
@@ -210,6 +252,9 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 		if overview.Summary.CostUSDTicks < 700 {
 			t.Errorf("summary.cost_usd_ticks = %d, want at least this test's 700", overview.Summary.CostUSDTicks)
 		}
+		if overview.Summary.UncostedInputTokens < 150 {
+			t.Errorf("summary.uncosted_input_tokens = %d, want at least this test's 150", overview.Summary.UncostedInputTokens)
+		}
 	})
 
 	t.Run("workspace rows carry the owner and counts", func(t *testing.T) {
@@ -251,9 +296,9 @@ func TestStoreAggregatesAcrossWorkspaces(t *testing.T) {
 				if agent.RuntimeID == nil || *agent.RuntimeID != otherRuntime {
 					t.Errorf("agent runtime = %v, want %s", agent.RuntimeID, otherRuntime)
 				}
-				if agent.RuntimeProvider != "handler_test_runtime" || agent.RuntimeStatus != "online" {
-					t.Errorf("runtime = %q/%q, want handler_test_runtime/online",
-						agent.RuntimeProvider, agent.RuntimeStatus)
+				if agent.RuntimeProvider != runtimeProvider || agent.RuntimeStatus != "online" {
+					t.Errorf("runtime = %q/%q, want %s/online",
+						agent.RuntimeProvider, agent.RuntimeStatus, runtimeProvider)
 				}
 			case "instance-store-archived":
 				sawArchived = true

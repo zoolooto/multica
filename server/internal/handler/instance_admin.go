@@ -42,14 +42,6 @@ type instanceAccessResponse struct {
 	IsInstanceAdmin bool `json:"is_instance_admin"`
 }
 
-// instanceCaller is the account behind an authorized request: the fields the
-// instance endpoints need after the identity check has already loaded the user
-// row. Timezone is the account's stored, validated zone, or "" when it never
-// set one — the overview uses it instead of re-reading the user.
-type instanceCaller struct {
-	Timezone string
-}
-
 // GetInstanceAccess reports whether the caller may use the instance surface.
 // It is a probe for the caller (a future console entry point uses it to decide
 // whether to render at all), so a non-administrator gets a plain false rather
@@ -60,7 +52,7 @@ func (h *Handler) GetInstanceAccess(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	_, allowed := h.instanceAdminCaller(r, userID)
+	_, allowed := h.instanceAdminAllowed(r, userID)
 	writeJSON(w, http.StatusOK, instanceAccessResponse{IsInstanceAdmin: allowed})
 }
 
@@ -71,7 +63,7 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	caller, allowed := h.instanceAdminCaller(r, userID)
+	storedTimezone, allowed := h.instanceAdminAllowed(r, userID)
 	if !allowed {
 		writeError(w, http.StatusForbidden, "instance administration is not available to this account")
 		return
@@ -84,7 +76,7 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 	days := daysParam(r, instanceOverviewDefaultDays)
 	tz := validTimezone(r.URL.Query().Get("tz"))
 	if tz == "" {
-		tz = caller.Timezone
+		tz = storedTimezone
 	}
 	if tz == "" {
 		tz = "UTC"
@@ -108,9 +100,10 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, overview)
 }
 
-// instanceAdminCaller applies the whole identity check in one place and
-// returns what the handler needs afterwards, so an authorized overview request
-// reads the account row once.
+// instanceAdminAllowed applies the whole identity check in one place and returns
+// the account's stored, validated timezone alongside the decision, so an
+// authorized overview request reads that row once instead of going through
+// resolveViewingTZ's second lookup.
 //
 // The order matters for cost and for what leaks: the configuration check
 // short-circuits before the user lookup, and the machine-credential refusal
@@ -121,24 +114,24 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 // authoritative gate. This check is the fail-closed backstop the actor-guard
 // contract asks sensitive handlers to keep, so a future route added to the
 // group without the middleware still refuses machine credentials.
-func (h *Handler) instanceAdminCaller(r *http.Request, userID string) (instanceCaller, bool) {
+func (h *Handler) instanceAdminAllowed(r *http.Request, userID string) (string, bool) {
 	if !h.InstanceAdmins.Configured() {
-		return instanceCaller{}, false
+		return "", false
 	}
 	if isMachineCredentialActor(r) {
-		return instanceCaller{}, false
+		return "", false
 	}
 	uid, err := util.ParseUUID(userID)
 	if err != nil {
-		return instanceCaller{}, false
+		return "", false
 	}
 	user, err := h.Queries.GetUser(r.Context(), uid)
 	if err != nil {
 		slog.Warn("instance admin: user lookup failed", "path", r.URL.Path, "error", err)
-		return instanceCaller{}, false
+		return "", false
 	}
 	if !h.InstanceAdmins.Allows(user.Email) {
-		return instanceCaller{}, false
+		return "", false
 	}
-	return instanceCaller{Timezone: validTimezone(user.Timezone.String)}, true
+	return validTimezone(user.Timezone.String), true
 }

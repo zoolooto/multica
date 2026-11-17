@@ -82,6 +82,10 @@ func (s *Store) Load(ctx context.Context, since time.Time, tz string) (Overview,
 		summary.CacheReadTokens += row.CacheReadTokens
 		summary.CacheWriteTokens += row.CacheWriteTokens
 		summary.CostUSDTicks += row.CostUSDTicks
+		summary.UncostedInputTokens += row.UncostedInputTokens
+		summary.UncostedOutputTokens += row.UncostedOutputTokens
+		summary.UncostedCacheRead += row.UncostedCacheRead
+		summary.UncostedCacheWrite += row.UncostedCacheWrite
 	}
 
 	return Overview{
@@ -154,8 +158,8 @@ ORDER BY w.created_at ASC, w.name ASC
 			return nil, fmt.Errorf("scan instance workspace: %w", err)
 		}
 		ws.ID = util.UUIDToString(id)
-		ws.CreatedAt = formatTimestamp(createdAt)
-		ws.LastActivityAt = timestampOrNil(activeAt)
+		ws.CreatedAt = util.TimestampToString(createdAt)
+		ws.LastActivityAt = util.TimestampToPtr(activeAt)
 		ws.Owner = ownerOrNil(ownerID, ownerName, ownerEmail)
 		workspaces = append(workspaces, ws)
 	}
@@ -208,8 +212,8 @@ ORDER BY u.created_at ASC, u.id ASC
 			return nil, fmt.Errorf("scan instance user: %w", err)
 		}
 		user.ID = util.UUIDToString(id)
-		user.CreatedAt = formatTimestamp(createdAt)
-		user.LastActiveAt = timestampOrNil(activeAt)
+		user.CreatedAt = util.TimestampToString(createdAt)
+		user.LastActiveAt = util.TimestampToPtr(activeAt)
 		user.Workspaces = []UserWorkspace{}
 		if len(membership) > 0 {
 			if err := json.Unmarshal(membership, &user.Workspaces); err != nil {
@@ -282,12 +286,12 @@ ORDER BY w.name ASC, a.name ASC, a.id ASC
 		agent.ID = util.UUIDToString(id)
 		agent.WorkspaceID = util.UUIDToString(workspace)
 		agent.Model = textOrEmpty(model)
-		agent.RuntimeID = uuidOrNil(runtimeID)
+		agent.RuntimeID = util.UUIDToPtr(runtimeID)
 		agent.RuntimeProvider = textOrEmpty(provider)
 		agent.RuntimeStatus = textOrEmpty(status)
-		agent.RuntimeLastSeen = timestampOrNil(lastSeen)
+		agent.RuntimeLastSeen = util.TimestampToPtr(lastSeen)
 		agent.Owner = ownerOrNil(ownerID, ownerName, ownerEmail)
-		agent.LastRunAt = timestampOrNil(lastRunAt)
+		agent.LastRunAt = util.TimestampToPtr(lastRunAt)
 		agents = append(agents, agent)
 	}
 	if err := rows.Err(); err != nil {
@@ -300,29 +304,35 @@ ORDER BY w.name ASC, a.name ASC, a.id ASC
 // the day the caller's timezone puts each hour in. provider is LOWER()-normalized
 // exactly as the workspace dashboard does (pkg/db/queries/task_usage.sql), so
 // mixed-case historical rows merge with canonical lowercase ones instead of
-// splitting one provider across two buckets. Cost is the provider's
-// authoritative figure where present (cost_usd_ticks, 1e-10 USD), with no
-// client-side pricing table needed — an instance report cannot know which
-// workspace's custom pricing applies.
+// splitting one provider across two buckets.
+//
+// The cost split mirrors that same query: cost_usd_ticks is NOT NULL DEFAULT 0
+// and counts only provider-priced rows, while the uncosted_* columns carry the
+// tokens still priced from the static rate table (NULL on buckets the rollup
+// has not recomputed since migration 213 — read as "estimate all of them").
+// LEFT JOIN because task_usage_hourly has no foreign key to workspace: rows
+// that outlive a deleted workspace still count toward the instance's usage,
+// and hiding them would make this report disagree with the meter.
 func (s *Store) usage(ctx context.Context, since time.Time, tz string) ([]UsageRow, error) {
 	const query = `
 SELECT
     DATE(tu.bucket_hour AT TIME ZONE $1) AS day,
     tu.workspace_id,
-    w.name AS workspace_name,
+    COALESCE(w.name, '') AS workspace_name,
     LOWER(tu.provider) AS provider,
     tu.model,
     SUM(tu.input_tokens)::bigint AS input_tokens,
     SUM(tu.output_tokens)::bigint AS output_tokens,
     SUM(tu.cache_read_tokens)::bigint AS cache_read_tokens,
     SUM(tu.cache_write_tokens)::bigint AS cache_write_tokens,
-    -- cost_usd_ticks is NULL when the provider did not price the row, and SUM
-    -- over an all-NULL bucket would come back NULL; the payload reports 0 cost
-    -- there (those tokens are still counted) instead of failing the scan.
-    COALESCE(SUM(tu.cost_usd_ticks), 0)::bigint AS cost_usd_ticks,
+    SUM(tu.cost_usd_ticks)::bigint AS cost_usd_ticks,
+    SUM(COALESCE(tu.uncosted_input_tokens, tu.input_tokens))::bigint AS uncosted_input_tokens,
+    SUM(COALESCE(tu.uncosted_output_tokens, tu.output_tokens))::bigint AS uncosted_output_tokens,
+    SUM(COALESCE(tu.uncosted_cache_read_tokens, tu.cache_read_tokens))::bigint AS uncosted_cache_read_tokens,
+    SUM(COALESCE(tu.uncosted_cache_write_tokens, tu.cache_write_tokens))::bigint AS uncosted_cache_write_tokens,
     SUM(tu.task_count)::bigint AS task_count
 FROM task_usage_hourly tu
-JOIN workspace w ON w.id = tu.workspace_id
+LEFT JOIN workspace w ON w.id = tu.workspace_id
 WHERE tu.bucket_hour >= $2
 GROUP BY 1, 2, 3, 4, 5
 ORDER BY 1 DESC, 3 ASC, 4 ASC, 5 ASC
@@ -343,7 +353,10 @@ ORDER BY 1 DESC, 3 ASC, 4 ASC, 5 ASC
 		if err := rows.Scan(
 			&day, &workspace, &row.WorkspaceName, &row.Provider, &row.Model,
 			&row.InputTokens, &row.OutputTokens, &row.CacheReadTokens, &row.CacheWriteTokens,
-			&row.CostUSDTicks, &row.TaskCount,
+			&row.CostUSDTicks,
+			&row.UncostedInputTokens, &row.UncostedOutputTokens,
+			&row.UncostedCacheRead, &row.UncostedCacheWrite,
+			&row.TaskCount,
 		); err != nil {
 			return nil, fmt.Errorf("scan instance usage: %w", err)
 		}
@@ -376,29 +389,6 @@ SELECT
 		return Summary{}, fmt.Errorf("read instance activity summary: %w", err)
 	}
 	return summary, nil
-}
-
-func formatTimestamp(ts pgtype.Timestamptz) string {
-	if !ts.Valid {
-		return ""
-	}
-	return ts.Time.UTC().Format(time.RFC3339)
-}
-
-func timestampOrNil(ts pgtype.Timestamptz) *string {
-	if !ts.Valid {
-		return nil
-	}
-	formatted := formatTimestamp(ts)
-	return &formatted
-}
-
-func uuidOrNil(id pgtype.UUID) *string {
-	if !id.Valid {
-		return nil
-	}
-	formatted := util.UUIDToString(id)
-	return &formatted
 }
 
 func textOrEmpty(value pgtype.Text) string {

@@ -186,6 +186,21 @@ func TestInstanceOverviewDefaultsAndWindow(t *testing.T) {
 	})
 }
 
+func TestInstanceOverviewFailsClosedWithoutAStore(t *testing.T) {
+	// A handler built without a DB executor cannot serve the read model; it
+	// must refuse instead of panicking on a nil store.
+	withInstanceAdmins(t, handlerTestEmail)
+	previous := testHandler.InstanceAdminStore
+	testHandler.InstanceAdminStore = nil
+	t.Cleanup(func() { testHandler.InstanceAdminStore = previous })
+
+	req, rec := instanceRequest(t, http.MethodGet, "/api/instance/overview", "")
+	testHandler.GetInstanceOverview(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body = %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestInstanceOverviewContainsInstanceWideRowsAndUsage(t *testing.T) {
 	withInstanceAdmins(t, handlerTestEmail)
 	ctx := context.Background()
