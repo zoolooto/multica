@@ -393,18 +393,26 @@ func parseExactSinceParamInTZ(r *http.Request, defaultDays int, tzName string) p
 // wrote is excluded. Production always reads the real clock.
 var dayWindowNow = time.Now
 
+// daysParam reads the `days=N` window, shared by every date-bucketed endpoint:
+// out-of-range or unparseable values fall back to defaultDays rather than
+// erroring, so a stale bookmark still returns data. The 365 cap matches the
+// dashboard's longest selectable range.
+func daysParam(r *http.Request, defaultDays int) int {
+	if d := r.URL.Query().Get("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 365 {
+			return parsed
+		}
+	}
+	return defaultDays
+}
+
 func parseDaysCutoff(
 	r *http.Request,
 	defaultDays int,
 	tzName string,
 	trimDays int,
 ) pgtype.Timestamptz {
-	days := defaultDays
-	if d := r.URL.Query().Get("days"); d != "" {
-		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 && parsed <= 365 {
-			days = parsed
-		}
-	}
+	days := daysParam(r, defaultDays)
 	loc, err := time.LoadLocation(tzName)
 	if err != nil || loc == nil {
 		loc = time.UTC

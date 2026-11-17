@@ -1828,9 +1828,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// the person who runs the deployment can see every workspace, account,
 		// agent/runtime and the instance's usage without direct SQL. Access is
 		// granted by INSTANCE_ADMIN_EMAILS and checked inside each handler (the
-		// gate is an account lookup, not a route middleware). No write action and
-		// no workspace content is reachable from here.
-		r.Route("/api/instance", func(r chi.Router) {
+		// gate is an account lookup, not a route middleware). The human-actor
+		// guard is shared with the other human-only scopes, so a task token or
+		// cloud PAT never reaches the handler that would resolve its owner.
+		// No write action and no workspace content is reachable from here.
+		r.With(handler.RequireHumanActor).Route("/api/instance", func(r chi.Router) {
 			r.Get("/access", h.GetInstanceAccess)
 			r.Get("/overview", h.GetInstanceOverview)
 		})

@@ -123,7 +123,7 @@ Pour l'ordre exact d'évaluation des listes d'autorisation, consultez [Connexion
 
 | Variable | Valeur par défaut | Description |
 |---|---|---|
-| `INSTANCE_ADMIN_EMAILS` | vide | Adresses e-mail complètes autorisées à lire la vue d'exploitation à l'échelle de l'instance, séparées par des virgules. Une fois définies, ces comptes peuvent appeler `GET /api/instance/access` et `GET /api/instance/overview` ; tous les autres appelants reçoivent 403. N'accorde aucun accès au contenu des espaces de travail et n'effectue aucune écriture |
+| `INSTANCE_ADMIN_EMAILS` | vide | Adresses e-mail complètes autorisées à lire la vue d'exploitation à l'échelle de l'instance, séparées par des virgules. Une fois définies, ces comptes peuvent appeler `GET /api/instance/access` (les autres appelants reçoivent `false`) et `GET /api/instance/overview` (les autres appelants reçoivent 403). N'accorde aucun accès au contenu des espaces de travail et n'effectue aucune écriture |
 
 ## Stockage des pièces jointes
 

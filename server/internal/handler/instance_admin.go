@@ -3,8 +3,6 @@ package handler
 import (
 	"log/slog"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/multica-ai/multica/server/internal/instanceadmin"
@@ -37,10 +35,9 @@ import (
 // and audit trail; the upstream issue calls content access a separate
 // decision too.
 
-const (
-	instanceOverviewDefaultDays = 30
-	instanceOverviewMaxDays     = 365
-)
+// instanceOverviewDefaultDays matches the workspace dashboard's default
+// window; daysParam enforces the same 1..365 range.
+const instanceOverviewDefaultDays = 30
 
 type instanceAccessResponse struct {
 	IsInstanceAdmin bool `json:"is_instance_admin"`
@@ -77,8 +74,11 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	days := instanceOverviewDays(r)
+	days := daysParam(r, instanceOverviewDefaultDays)
 	tz := h.resolveViewingTZ(r)
+	// resolveViewingTZ only ever returns a loadable zone (a validated ?tz=, a
+	// stored timezone that loads, or "UTC"), so the fallback below is a
+	// formality; it keeps the handler honest if that contract changes.
 	loc, err := time.LoadLocation(tz)
 	if err != nil || loc == nil {
 		tz = "UTC"
@@ -106,6 +106,11 @@ func (h *Handler) GetInstanceOverview(w http.ResponseWriter, r *http.Request) {
 // short-circuits before the user lookup, and the machine-credential refusal
 // comes before it too, so an agent token can never even trigger the lookup.
 // A missing user row (deleted account with a live token) is a plain refusal.
+//
+// The route group also carries handler.RequireHumanActor, which is the
+// authoritative gate. This check is the fail-closed backstop the actor-guard
+// contract asks sensitive handlers to keep, so a future route added to the
+// group without the middleware still refuses machine credentials.
 func (h *Handler) instanceAdminAllowed(r *http.Request, userID string) bool {
 	if !h.InstanceAdmins.Configured() {
 		return false
@@ -123,21 +128,6 @@ func (h *Handler) instanceAdminAllowed(r *http.Request, userID string) bool {
 		return false
 	}
 	return h.InstanceAdmins.Allows(user.Email)
-}
-
-// instanceOverviewDays reads the `days` window, mirroring the dashboard
-// endpoints' contract: out-of-range or unparseable values fall back to the
-// default rather than erroring, so a stale bookmark still returns data.
-func instanceOverviewDays(r *http.Request) int {
-	raw := strings.TrimSpace(r.URL.Query().Get("days"))
-	if raw == "" {
-		return instanceOverviewDefaultDays
-	}
-	days, err := strconv.Atoi(raw)
-	if err != nil || days < 1 || days > instanceOverviewMaxDays {
-		return instanceOverviewDefaultDays
-	}
-	return days
 }
 
 // compile-time check that the store satisfies the handler's reader contract.

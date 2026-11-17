@@ -123,7 +123,7 @@ allowlist의 정확한 판단 순서는 [로그인과 가입](/auth-setup#가입
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `INSTANCE_ADMIN_EMAILS` | 비어 있음 | 인스턴스 전체 운영 뷰를 읽을 수 있는 이메일 주소(전체 일치, 쉼표 구분). 설정하면 해당 계정은 `GET /api/instance/access`와 `GET /api/instance/overview`를 호출할 수 있고, 그 외 호출자는 모두 403을 받습니다. 워크스페이스 콘텐츠 접근 권한은 부여하지 않으며 쓰기 작업도 포함하지 않습니다 |
+| `INSTANCE_ADMIN_EMAILS` | 비어 있음 | 인스턴스 전체 운영 뷰를 읽을 수 있는 이메일 주소(전체 일치, 쉼표 구분). 설정하면 해당 계정은 `GET /api/instance/access`(그 외 호출자는 `false`)와 `GET /api/instance/overview`(그 외 호출자는 403)를 호출할 수 있습니다. 워크스페이스 콘텐츠 접근 권한은 부여하지 않으며 쓰기 작업도 포함하지 않습니다 |
 
 ## 첨부 파일 저장소
 

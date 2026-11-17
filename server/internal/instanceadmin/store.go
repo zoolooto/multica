@@ -20,9 +20,17 @@ type Querier interface {
 }
 
 // Store reads the instance-wide model straight from the tables that already
-// own the facts. No rollup table was added for this surface: the per-workspace
-// rollups are keyed by workspace_id, and an instance report is a scan over
-// them with the key removed, which the existing time indexes still cover.
+// own the facts. No rollup table was added for this surface, and no migration
+// was needed for it.
+//
+// Cost note: the rollup tables are indexed by workspace_id / runtime_id, so an
+// instance report that drops the workspace key scans them (the window is
+// covered, the key is not). On a busy instance the windowed usage query is the
+// most expensive statement here. That is accepted for a read-only operator
+// view on a self-hosted deployment — a bucket_hour-leading index would buy
+// little on tables this size and every migration is a version-bump operators
+// have to run. If the surface ever grows a live dashboard, add that index
+// rather than caching the response.
 type Store struct {
 	db Querier
 }
@@ -52,7 +60,7 @@ func (s *Store) Load(ctx context.Context, since time.Time, tz string) (Overview,
 	if err != nil {
 		return Overview{}, err
 	}
-	summary, err := s.summary(ctx, since)
+	summary, err := s.activity(ctx, since)
 	if err != nil {
 		return Overview{}, err
 	}
@@ -64,6 +72,16 @@ func (s *Store) Load(ctx context.Context, since time.Time, tz string) (Overview,
 		summary.RuntimeCount += ws.RuntimeCount
 		summary.OnlineRuntimeCount += ws.OnlineRuntimeCount
 		summary.OpenIssueCount += ws.OpenIssueCount
+	}
+	// Token and cost totals are the sum of the rows already loaded for the same
+	// window, so the meter is read once instead of once per section. A separate
+	// SUM query would return the same numbers and pay for a second scan.
+	for _, row := range usage {
+		summary.InputTokens += row.InputTokens
+		summary.OutputTokens += row.OutputTokens
+		summary.CacheReadTokens += row.CacheReadTokens
+		summary.CacheWriteTokens += row.CacheWriteTokens
+		summary.CostUSDTicks += row.CostUSDTicks
 	}
 
 	return Overview{
@@ -279,7 +297,10 @@ ORDER BY w.name ASC, a.name ASC, a.id ASC
 }
 
 // usage returns the windowed daily series across all workspaces, bucketed by
-// the day the caller's timezone puts each hour in. Cost is the provider's
+// the day the caller's timezone puts each hour in. provider is LOWER()-normalized
+// exactly as the workspace dashboard does (pkg/db/queries/task_usage.sql), so
+// mixed-case historical rows merge with canonical lowercase ones instead of
+// splitting one provider across two buckets. Cost is the provider's
 // authoritative figure where present (cost_usd_ticks, 1e-10 USD), with no
 // client-side pricing table needed — an instance report cannot know which
 // workspace's custom pricing applies.
@@ -333,29 +354,21 @@ ORDER BY 1 DESC, 3 ASC, 4 ASC, 5 ASC
 	return usage, nil
 }
 
-// summary reads the activity confined to the window: runs that started (were
-// queued) inside it, how many of them failed, and the meter that billed them.
-// Object counts are filled in by Load from the lists it already has.
-func (s *Store) summary(ctx context.Context, since time.Time) (Summary, error) {
+// activity reads the run counts confined to the window: tasks that were queued
+// inside it and how many of them ended failed. Token and cost totals are not
+// read here — Load sums them from the usage rows, which are already loaded for
+// the same window. Object counts are filled in by Load from the lists it
+// already has.
+func (s *Store) activity(ctx context.Context, since time.Time) (Summary, error) {
 	const query = `
 SELECT
     (SELECT COUNT(*) FROM agent_task_queue WHERE created_at >= $1)::int AS runs,
-    (SELECT COUNT(*) FROM agent_task_queue WHERE created_at >= $1 AND status = 'failed')::int AS failed_runs,
-    (SELECT COALESCE(SUM(input_tokens), 0) FROM task_usage_hourly WHERE bucket_hour >= $1)::bigint AS input_tokens,
-    (SELECT COALESCE(SUM(output_tokens), 0) FROM task_usage_hourly WHERE bucket_hour >= $1)::bigint AS output_tokens,
-    (SELECT COALESCE(SUM(cache_read_tokens), 0) FROM task_usage_hourly WHERE bucket_hour >= $1)::bigint AS cache_read_tokens,
-    (SELECT COALESCE(SUM(cache_write_tokens), 0) FROM task_usage_hourly WHERE bucket_hour >= $1)::bigint AS cache_write_tokens,
-    (SELECT COALESCE(SUM(cost_usd_ticks), 0) FROM task_usage_hourly WHERE bucket_hour >= $1)::bigint AS cost_usd_ticks
+    (SELECT COUNT(*) FROM agent_task_queue WHERE created_at >= $1 AND status = 'failed')::int AS failed_runs
 `
 	var summary Summary
 	if err := s.db.QueryRow(ctx, query, since).Scan(
 		&summary.Runs,
 		&summary.FailedRuns,
-		&summary.InputTokens,
-		&summary.OutputTokens,
-		&summary.CacheReadTokens,
-		&summary.CacheWriteTokens,
-		&summary.CostUSDTicks,
 	); err != nil {
 		return Summary{}, fmt.Errorf("read instance activity summary: %w", err)
 	}
@@ -373,7 +386,7 @@ func timestampOrNil(ts pgtype.Timestamptz) *string {
 	if !ts.Valid {
 		return nil
 	}
-	formatted := ts.Time.UTC().Format(time.RFC3339)
+	formatted := formatTimestamp(ts)
 	return &formatted
 }
 

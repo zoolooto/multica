@@ -43,6 +43,28 @@ func decodeInstanceOverview(t *testing.T, rec *httptest.ResponseRecorder) instan
 	return overview
 }
 
+// assertListFieldsNotNull guards the JSON contract, not the Go value: a nil
+// slice and an empty slice both have length 0, so decoding into Overview cannot
+// tell `null` from `[]`. A consumer iterating these lists must never have to
+// null-check them.
+func assertListFieldsNotNull(t *testing.T, rec *httptest.ResponseRecorder, keys ...string) {
+	t.Helper()
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode raw overview: %v", err)
+	}
+	for _, key := range keys {
+		value, ok := raw[key]
+		if !ok {
+			t.Errorf("%s missing from the response", key)
+			continue
+		}
+		if string(value) == "null" {
+			t.Errorf("%s is null, want an array (empty at minimum)", key)
+		}
+	}
+}
+
 func TestInstanceAccessReportsConfiguredAdmin(t *testing.T) {
 	t.Run("unconfigured", func(t *testing.T) {
 		withInstanceAdmins(t)
@@ -200,6 +222,7 @@ func TestInstanceOverviewContainsInstanceWideRowsAndUsage(t *testing.T) {
 	req, rec := instanceRequest(t, http.MethodGet, "/api/instance/overview?days=1&tz=UTC", "")
 	testHandler.GetInstanceOverview(rec, req)
 	overview := decodeInstanceOverview(t, rec)
+	assertListFieldsNotNull(t, rec, "workspaces", "users", "agents", "usage")
 
 	if overview.GeneratedAt == "" {
 		t.Error("generated_at is empty")
