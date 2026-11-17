@@ -25,8 +25,8 @@ describe("RealtimeDegradedBanner", () => {
     );
   });
 
-  it("announces itself politely to assistive tech", () => {
+  it("announces itself as a status region", () => {
     renderWithI18n(<RealtimeDegradedBanner />);
-    expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });

@@ -39,7 +39,6 @@ import { AgentAccessRevokedBanner } from "./agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./runtime-required-banner";
 import { RealtimeDegradedBanner } from "./realtime-degraded-banner";
 import { useChatRealtimeWatchdog } from "./use-chat-realtime-watchdog";
-import { isRealtimeDegraded } from "../lib/realtime-watchdog";
 import {
   pendingChatTasksOptions,
   chatKeys,
@@ -73,6 +72,7 @@ import { useChatController } from "./use-chat-controller";
 import { createLogger } from "@multica/core/logger";
 import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
 import { useT } from "../../i18n";
+import { isRealtimeDegraded } from "../lib/realtime-watchdog";
 
 const uiLogger = createLogger("chat.ui");
 const apiLogger = createLogger("chat.api");

@@ -4,18 +4,7 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { chatKeys, isTaskMessageTaskId } from "@multica/core/chat/queries";
 import type { WSStatus } from "@multica/core/realtime";
-import { CHAT_WATCHDOG_POLL_MS, isRealtimeDegraded } from "../lib/realtime-watchdog";
-
-/**
- * How often a turn that is still running on a *healthy* socket is
- * re-checked. This is the fallback for a socket that never reports itself as
- * broken: `WSClient` only reacts to `onclose`, so a half-open connection stops
- * delivering `chat:done` while the client keeps believing it is connected —
- * the reported "stuck until Stop" state. Slower than the degraded cadence
- * because the socket is not known to be down; the cost is only paid while a
- * turn is actually in flight.
- */
-export const CHAT_PENDING_RECONCILE_MS = 20_000;
+import { CHAT_PENDING_RECONCILE_MS, CHAT_WATCHDOG_POLL_MS, isRealtimeDegraded } from "../lib/realtime-watchdog";
 
 export interface ChatRealtimeWatchdogOptions {
   /** Live workspace socket state (`useWSStatus()`). */
@@ -45,8 +34,8 @@ export interface ChatRealtimeWatchdogOptions {
  *
  * - the socket is known to be down: re-read the conversation immediately, then
  *   keep polling the turn keys until it is back;
- * - a turn is still running: re-check only its pending state on a slower
- *   cadence, because the socket may be half-open and never report the loss.
+ * - a turn is still running: re-check its pending state on a slower cadence,
+ *   because the socket may be half-open and never report the loss.
  *
  * Reconciliation is invalidation against the same query keys the WS handlers
  * use, so the server response stays authoritative — no optimistic writes and
@@ -89,19 +78,44 @@ export function useChatRealtimeWatchdog({
 
     // Reconcile on the leading edge, not one interval later.
     reconcile();
+    // A loop rather than per-query `refetchInterval`: one tick invalidates
+    // several keys, and the transcript is re-read outside the loop.
     const timer = setInterval(reconcile, pollMs);
     return () => clearInterval(timer);
   }, [degraded, hasTask, pollMs, qc, sessionId, taskId, watching, wsId]);
 
   // A turn that settles — finished, failed, or replaced by the next one —
   // changes the transcript, and nothing re-read it if the terminal frame was
-  // the thing that got lost.
-  const settledFrom = useRef<string | null>(null);
+  // the thing that got lost. Tracked per conversation so switching chats does
+  // not read as a settle, and remembered while the surface is off-screen so
+  // reopening it catches up.
+  const settledFrom = useRef<{ sessionId: string; taskId: string | null } | null>(
+    null,
+  );
+  const awaitingCatchUp = useRef(false);
   useEffect(() => {
-    if (!enabled || !sessionId) return;
+    if (!sessionId) {
+      settledFrom.current = null;
+      awaitingCatchUp.current = false;
+      return;
+    }
+    const current = hasTask ? taskId : null;
     const previous = settledFrom.current;
-    settledFrom.current = hasTask ? taskId : null;
-    if (!previous || previous === taskId) return;
+    settledFrom.current = { sessionId, taskId: current };
+
+    if (!previous || previous.sessionId !== sessionId) {
+      // Another conversation has its own transcript and its own history.
+      awaitingCatchUp.current = false;
+    } else if (previous.taskId !== current) {
+      if (enabled) {
+        qc.invalidateQueries({ queryKey: chatKeys.messagesPage(sessionId) });
+      } else {
+        awaitingCatchUp.current = true;
+      }
+    }
+
+    if (!enabled || !awaitingCatchUp.current) return;
+    awaitingCatchUp.current = false;
     qc.invalidateQueries({ queryKey: chatKeys.messagesPage(sessionId) });
   }, [enabled, hasTask, qc, sessionId, taskId]);
 }
