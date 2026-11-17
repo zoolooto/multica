@@ -8,6 +8,7 @@ import { IconButton } from "@multica/ui/components/common/icon-button";
 import { useIsCompact } from "@multica/ui/hooks/use-mobile";
 import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@multica/core/paths";
 import { getCurrentSlug } from "@multica/core/platform";
+import { useWSStatus } from "@multica/core/realtime";
 import { useChatStore } from "@multica/core/chat";
 import { chatQuickActionsPendingOptions } from "@multica/core/chat/queries";
 import { useRegenerateChatQuickActions } from "@multica/core/chat/mutations";
@@ -37,6 +38,9 @@ import { NoAgentBanner } from "./components/no-agent-banner";
 import { ArchivedAgentBanner } from "./components/archived-agent-banner";
 import { AgentAccessRevokedBanner } from "./components/agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./components/runtime-required-banner";
+import { RealtimeDegradedBanner } from "./components/realtime-degraded-banner";
+import { useChatRealtimeWatchdog } from "./components/use-chat-realtime-watchdog";
+import { isRealtimeDegraded } from "./lib/realtime-watchdog";
 import { ChatAppRequests } from "../common/app-requests";
 import { useRegisterCommandBarContext } from "../search/register-context";
 
@@ -71,8 +75,17 @@ export function ChatPage() {
   const isCurrentChatRoute = pathname === wsPaths.chat();
   const isCompact = useIsCompact();
 
-  const c = useChatController({
-    isActive: isCurrentChatRoute && getCurrentSlug() === workspaceSlug,
+  const isActive = isCurrentChatRoute && getCurrentSlug() === workspaceSlug;
+  const c = useChatController({ isActive });
+  // A lost socket freezes the open conversation until a manual Stop, so
+  // reconcile against the API while it is down and say so on screen.
+  const wsStatus = useWSStatus();
+  useChatRealtimeWatchdog({
+    status: wsStatus,
+    enabled: isActive,
+    wsId: c.wsId,
+    sessionId: c.activeSessionId,
+    taskId: c.pendingTaskId,
   });
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
@@ -383,6 +396,10 @@ export function ChatPage() {
       ) : (
         <OfflineBanner agentName={c.activeAgent?.name} availability={c.availability} />
       )}
+
+      {/* Socket health is orthogonal to agent presence: a dead socket makes a
+       *  stale conversation look exactly like a running one. */}
+      {isRealtimeDegraded(wsStatus) && <RealtimeDegradedBanner />}
 
       <div className="px-4">
         <ChatAppRequests sessionId={c.activeSessionId} />

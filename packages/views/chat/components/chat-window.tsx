@@ -16,6 +16,7 @@ import { useWorkspaceId } from "@multica/core/hooks";
 import { useReducedMotion } from "@multica/core/appearance";
 import { api } from "@multica/core/api";
 import { isAgentRuntimeBound } from "@multica/core/agents";
+import { useWSStatus } from "@multica/core/realtime";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { ActionShortcutKeycaps } from "../../common/shortcut-keycaps";
@@ -36,6 +37,8 @@ import { NoAgentBanner } from "./no-agent-banner";
 import { ArchivedAgentBanner } from "./archived-agent-banner";
 import { AgentAccessRevokedBanner } from "./agent-access-revoked-banner";
 import { RuntimeRequiredBanner } from "./runtime-required-banner";
+import { RealtimeDegradedBanner } from "./realtime-degraded-banner";
+import { useChatRealtimeWatchdog } from "./use-chat-realtime-watchdog";
 import {
   pendingChatTasksOptions,
   chatKeys,
@@ -69,6 +72,7 @@ import { useChatController } from "./use-chat-controller";
 import { createLogger } from "@multica/core/logger";
 import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
 import { useT } from "../../i18n";
+import { isRealtimeDegraded } from "../lib/realtime-watchdog";
 
 const uiLogger = createLogger("chat.ui");
 const apiLogger = createLogger("chat.api");
@@ -85,6 +89,16 @@ export function ChatWindow() {
   // MOUNTED when closed (it is only hidden, see isVisible below).
   const c = useChatController({ isActive: isOpen });
   const { wsId, activeSessionId, currentSession, activeAgent, pendingTask, pendingTaskId } = c;
+  // Until the workspace socket is back, the caches this window renders will
+  // miss events, so reconcile on a timer — but only while the window is open.
+  const wsStatus = useWSStatus();
+  useChatRealtimeWatchdog({
+    status: wsStatus,
+    enabled: isOpen,
+    wsId,
+    sessionId: activeSessionId,
+    taskId: pendingTaskId,
+  });
   const { data: quickActionsPending = null } = useQuery(
     chatQuickActionsPendingOptions(activeSessionId ?? ""),
   );
@@ -396,6 +410,10 @@ export function ChatWindow() {
       ) : (
         <OfflineBanner agentName={activeAgent?.name} availability={c.availability} />
       )}
+
+      {/* Realtime health is orthogonal to agent presence, so it gets its own
+       *  slot rather than competing with the banners above. */}
+      {isRealtimeDegraded(wsStatus) && <RealtimeDegradedBanner />}
 
       <div className="px-4">
         <ChatAppRequests sessionId={activeSessionId} />

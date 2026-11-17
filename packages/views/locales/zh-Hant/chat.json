@@ -220,6 +220,9 @@
     "unstable": "{{name}} 的連線不穩定——回覆可能延遲。",
     "offline": "{{name}} 離線——你的訊息將在它上線後傳送。"
   },
+  "realtime_banner": {
+    "degraded": "即時連線無法使用——正在重新連線，回覆與狀態可能延遲。"
+  },
   "status_pill": {
     "stages": {
       "offline": "離線",
