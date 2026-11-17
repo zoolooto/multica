@@ -118,12 +118,17 @@ func TestCheckCodexInstructionBudgetCountsRepositoryPrefix(t *testing.T) {
 		t.Fatalf("stat AGENTS.md: %v", err)
 	}
 
-	report := CheckCodexInstructionBudget(dir, "", nil)
+	// A generous explicit limit keeps the assertion about accounting, not about
+	// how large the generated brief happens to be today.
+	report := CheckCodexInstructionBudget(dir, "", []string{"-c", "project_doc_max_bytes=1048576"})
 	if report.TotalBytes != int(fi.Size()) {
 		t.Fatalf("total = %d, want injected file size %d (no double counting)", report.TotalBytes, fi.Size())
 	}
 	if report.Overflow() {
-		t.Fatalf("a %d-byte file should fit the default budget", fi.Size())
+		t.Fatalf("a %d-byte file should fit a 1 MiB budget", fi.Size())
+	}
+	if len(report.Sources) != 1 || report.Sources[0].Name != "AGENTS.md" {
+		t.Fatalf("sources = %v, want only the working-directory AGENTS.md", report.Sources)
 	}
 }
 

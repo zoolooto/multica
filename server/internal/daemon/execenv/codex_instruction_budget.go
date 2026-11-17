@@ -186,19 +186,16 @@ func codexProjectInstructionDirs(workDir string) []string {
 		return nil
 	}
 	root := abs
-	for dir := abs; ; {
-		root = dir
+	for dir := abs; ; dir = filepath.Dir(dir) {
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			root = dir
 			break
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
+		if filepath.Dir(dir) == dir {
 			// No repository marker anywhere: Codex still reads the working
 			// directory's own AGENTS.md, nothing above it.
-			root = abs
 			break
 		}
-		dir = parent
 	}
 	// Walk root → workDir without relying on string prefix checks.
 	rel, err := filepath.Rel(root, abs)
