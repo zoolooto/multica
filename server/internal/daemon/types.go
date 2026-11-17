@@ -262,7 +262,10 @@ type AgentData struct {
 }
 
 // DisabledRuntimeSkillData is the task-wire identity of one runtime-local
-// skill that must be hidden from this agent's provider process.
+// skill override carried from the server to the claiming daemon. Mode is the
+// tri-state override: "on" forces the skill on, anything else (including the
+// empty mode written before tri-state existed) forces it off. Absence of an
+// entry means "inherit the workspace policy" (GH #10776).
 type DisabledRuntimeSkillData struct {
 	RuntimeID string `json:"runtime_id"`
 	Provider  string `json:"provider"`
@@ -270,6 +273,7 @@ type DisabledRuntimeSkillData struct {
 	Key       string `json:"key"`
 	Name      string `json:"name,omitempty"`
 	Plugin    string `json:"plugin,omitempty"`
+	Mode      string `json:"mode,omitempty"`
 }
 
 // SkillData represents a structured skill for task execution.

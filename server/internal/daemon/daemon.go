@@ -8308,7 +8308,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		AgentName:                        agentName,
 		AgentInstructions:                instructions,
 		AgentSkills:                      convertSkillsForEnv(skills),
-		DisabledRuntimeSkills:            convertDisabledRuntimeSkillsForEnv(task.Agent, task.RuntimeID, provider),
+		DisabledRuntimeSkills:            d.runtimeSkillDisablesForTask(task, provider),
 		Repos:                            convertReposForEnv(task.Repos),
 		ProjectID:                        task.ProjectID,
 		ProjectTitle:                     task.ProjectTitle,
@@ -11219,25 +11219,6 @@ func convertSkillsForEnv(skills []SkillData) []execenv.SkillContextForEnv {
 				Content: f.Content,
 			})
 		}
-	}
-	return result
-}
-
-func convertDisabledRuntimeSkillsForEnv(agentData *AgentData, runtimeID, provider string) []execenv.RuntimeSkillRefForEnv {
-	if agentData == nil || len(agentData.DisabledRuntimeSkills) == 0 {
-		return nil
-	}
-	result := make([]execenv.RuntimeSkillRefForEnv, 0, len(agentData.DisabledRuntimeSkills))
-	for _, skill := range agentData.DisabledRuntimeSkills {
-		if skill.RuntimeID != runtimeID || skill.Provider != provider {
-			continue
-		}
-		result = append(result, execenv.RuntimeSkillRefForEnv{
-			Root:   skill.Root,
-			Key:    skill.Key,
-			Name:   skill.Name,
-			Plugin: skill.Plugin,
-		})
 	}
 	return result
 }

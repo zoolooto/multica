@@ -188,7 +188,12 @@ type RuntimeLocalSkillSummary struct {
 	Root       string `json:"root,omitempty"`
 	Plugin     string `json:"plugin,omitempty"`
 	CanDisable bool   `json:"can_disable,omitempty"`
-	FileCount  int    `json:"file_count"`
+	// ExternalEnabled is the runtime tool's own verdict on this skill: true
+	// when its configuration would load it, false when the user disabled it
+	// there, nil when the daemon cannot know. Clients show the effective state
+	// from it plus the agent override and the workspace policy.
+	ExternalEnabled *bool `json:"external_enabled,omitempty"`
+	FileCount       int   `json:"file_count"`
 }
 
 // RuntimeLocalMcpServerSummary is deliberately non-secret. The daemon only

@@ -100,6 +100,8 @@ Certains outils de codage IA lisent aussi des skills au niveau du projet directe
 
 Les skills locaux au runtime déjà installés sur un ordinateur connecté (Claude Code et Codex) apparaissent dans l'onglet **Skills** de l'agent et peuvent être désactivés agent par agent. Cette désactivation requiert également le droit de modifier l'agent.
 
+Les skills hérités suivent la configuration de désactivation de l'outil de runtime lui-même — `skillOverrides` pour Claude, `[[skills.config]]` pour Codex — : un skill désactivé dans l'outil l'est aussi ici. Chaque agent peut toujours surcharger un skill donné en **activé de force**, **désactivé** ou **hérité**. Ce que signifie « hérité » est décidé par le réglage d'espace de travail `runtime_skills_default_policy` : `all_enabled` n'ajoute aucune désactivation côté Multica, `all_disabled` exclut tous les skills hérités, et la valeur par défaut `follow_external` suit la configuration de l'outil. Cet état externe est un instantané pris lors du rafraîchissement des skills hérités ; Multica ne surveille pas ces fichiers, rafraîchissez donc après avoir modifié la configuration de l'outil.
+
 ## Droits de modification
 
 Tout membre de l'espace de travail peut créer ou importer un skill. Le créateur ainsi que les `owner` et `admin` de l'espace de travail peuvent le modifier ou le supprimer ; les autres membres peuvent le consulter et l'utiliser, mais pas écraser son contenu.

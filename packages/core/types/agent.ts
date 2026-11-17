@@ -684,6 +684,13 @@ export interface Agent {
   skills: AgentSkillSummary[];
   /** Runtime-local skills this agent must not inherit. Older servers omit it. */
   disabled_runtime_skills?: DisabledRuntimeSkill[];
+  /**
+   * Full tri-state override set for runtime-local skills: every stored "on"
+   * and "off" entry, plus the mode that gives it meaning. Absent entries
+   * inherit the workspace's `runtime_skills_default_policy`. Older servers
+   * omit this field; treat `undefined` as "no overrides known".
+   */
+  runtime_skill_overrides?: DisabledRuntimeSkill[];
   created_at: string;
   updated_at: string;
   archived_at: string | null;
@@ -704,15 +711,30 @@ export interface DisabledRuntimeSkill {
   key: string;
   name?: string;
   plugin?: string;
+  /**
+   * Per-agent override direction. "off" forbids inheritance, "on" forces the
+   * skill in even when the workspace policy would disable it. Servers that
+   * predate tri-state omit the field; an entry's presence then means "off".
+   */
+  mode?: RuntimeSkillOverrideMode;
 }
 
+/** Stored override directions. "inherit" is the absence of an entry. */
+export type RuntimeSkillOverrideMode = "on" | "off";
+
+/**
+ * Toggle request for one runtime-local skill. New clients send `mode`;
+ * `enabled` is the pre-tri-state spelling whose meaning is preserved:
+ * `true` inherits (removes the entry), `false` forces the skill off.
+ */
 export interface SetAgentRuntimeSkillEnabledRequest {
   runtime_id: string;
   root: "provider" | "universal" | "plugin";
   key: string;
   name: string;
   plugin?: string;
-  enabled: boolean;
+  mode?: "on" | "off" | "inherit";
+  enabled?: boolean;
 }
 
 /**
@@ -1418,6 +1440,14 @@ export interface RuntimeLocalSkillSummary {
   plugin?: string;
   /** New daemons set this only when they can enforce per-agent disablement. */
   can_disable?: boolean;
+  /**
+   * The runtime tool's own verdict on this skill (`skillOverrides` for Claude,
+   * `[[skills.config]]` for Codex). `false` means the user disabled it outside
+   * Multica. Undefined means unknown: the daemon predates the field, the
+   * provider has no such mechanism, or the config could not be read — never
+   * treat it as `true`.
+   */
+  external_enabled?: boolean;
   file_count: number;
 }
 

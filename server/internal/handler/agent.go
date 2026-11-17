@@ -131,15 +131,21 @@ type AgentResponse struct {
 	// members infer another member's integration footprint. Redacted to
 	// `nil` + `composio_toolkit_allowlist_redacted=true` for non-owners,
 	// mirroring the existing mcp_config redaction contract.
-	ComposioToolkitAllowlist         []string               `json:"composio_toolkit_allowlist,omitempty"`
-	ComposioToolkitAllowlistRedacted bool                   `json:"composio_toolkit_allowlist_redacted,omitempty"`
-	OwnerID                          *string                `json:"owner_id"`
-	Skills                           []AgentSkillSummary    `json:"skills"`
-	DisabledRuntimeSkills            []DisabledRuntimeSkill `json:"disabled_runtime_skills"`
-	CreatedAt                        string                 `json:"created_at"`
-	UpdatedAt                        string                 `json:"updated_at"`
-	ArchivedAt                       *string                `json:"archived_at"`
-	ArchivedBy                       *string                `json:"archived_by"`
+	ComposioToolkitAllowlist         []string            `json:"composio_toolkit_allowlist,omitempty"`
+	ComposioToolkitAllowlistRedacted bool                `json:"composio_toolkit_allowlist_redacted,omitempty"`
+	OwnerID                          *string             `json:"owner_id"`
+	Skills                           []AgentSkillSummary `json:"skills"`
+	// DisabledRuntimeSkills lists the runtime-local skills this agent forces
+	// off. It predates the tri-state override and keeps that exact meaning so
+	// older clients read a subset they already understand.
+	DisabledRuntimeSkills []DisabledRuntimeSkill `json:"disabled_runtime_skills"`
+	// RuntimeSkillOverrides is the full tri-state set: every "on" or "off"
+	// exception, with "inherit" represented by absence. Older servers omit it.
+	RuntimeSkillOverrides []DisabledRuntimeSkill `json:"runtime_skill_overrides"`
+	CreatedAt             string                 `json:"created_at"`
+	UpdatedAt             string                 `json:"updated_at"`
+	ArchivedAt            *string                `json:"archived_at"`
+	ArchivedBy            *string                `json:"archived_by"`
 }
 
 // runtimeConfigGatewayTokenMask is the placeholder the API substitutes for
@@ -207,6 +213,10 @@ func (h *Handler) agentToResponse(a db.Agent) AgentResponse {
 	// owner-only gate below can decide.
 	composioAllowlist := a.ComposioToolkitAllowlist
 
+	// Runtime skill overrides are decoded once: the response exposes the
+	// tri-state set and the pre-tri-state off-only subset derived from it.
+	runtimeSkillOverrides := normalizeRuntimeSkillOverrides(a.DisabledRuntimeSkills)
+
 	return AgentResponse{
 		ID:                       uuidToString(a.ID),
 		WorkspaceID:              uuidToString(a.WorkspaceID),
@@ -236,7 +246,8 @@ func (h *Handler) agentToResponse(a db.Agent) AgentResponse {
 		ComposioToolkitAllowlist: composioAllowlist,
 		OwnerID:                  uuidToPtr(a.OwnerID),
 		Skills:                   []AgentSkillSummary{},
-		DisabledRuntimeSkills:    decodeDisabledRuntimeSkills(a.DisabledRuntimeSkills),
+		DisabledRuntimeSkills:    disabledRuntimeSkillOverrides(runtimeSkillOverrides),
+		RuntimeSkillOverrides:    runtimeSkillOverrides,
 		CreatedAt:                timestampToString(a.CreatedAt),
 		UpdatedAt:                timestampToString(a.UpdatedAt),
 		ArchivedAt:               timestampToPtr(a.ArchivedAt),

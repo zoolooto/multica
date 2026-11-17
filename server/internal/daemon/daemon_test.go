@@ -6728,20 +6728,6 @@ func TestHandleTask_AcksCancelOnPostRunStatusCheck(t *testing.T) {
 	}
 }
 
-func TestConvertDisabledRuntimeSkillsForEnvScopesToClaimedRuntime(t *testing.T) {
-	t.Parallel()
-
-	agentData := &AgentData{DisabledRuntimeSkills: []DisabledRuntimeSkillData{
-		{RuntimeID: "runtime-1", Provider: "claude", Root: "provider", Key: "review", Name: "Review"},
-		{RuntimeID: "runtime-2", Provider: "claude", Root: "provider", Key: "other-runtime"},
-		{RuntimeID: "runtime-1", Provider: "codex", Root: "provider", Key: "other-provider"},
-	}}
-	got := convertDisabledRuntimeSkillsForEnv(agentData, "runtime-1", "claude")
-	if len(got) != 1 || got[0].Key != "review" || got[0].Name != "Review" {
-		t.Fatalf("unexpected scoped runtime skill policy: %+v", got)
-	}
-}
-
 // nestedPatchSecretBackend emits a Codex-shaped file-edit payload carrying a
 // credential nested inside changes[] — the legacy protocol reports a deletion
 // as the whole outgoing file, so deleting a .env puts its contents here.

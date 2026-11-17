@@ -20,6 +20,7 @@ import (
 	"github.com/multica-ai/multica/server/internal/issuestatus"
 	"github.com/multica-ai/multica/server/internal/logger"
 	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/multica-ai/multica/server/internal/skillpolicy"
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 	"github.com/multica-ai/multica/server/pkg/protocol"
 )
@@ -439,6 +440,24 @@ func validateAndNormalizeWorkspaceRepos(value any) ([]byte, error) {
 	return out, nil
 }
 
+// validateRuntimeSkillsDefaultPolicy rejects a typo in the workspace's runtime
+// skill default policy instead of storing a value the daemon would silently
+// normalize to the default. An absent key stays valid: the default applies.
+func validateRuntimeSkillsDefaultPolicy(settings map[string]any) error {
+	raw, present := settings[skillpolicy.SettingKey]
+	if !present || raw == nil {
+		return nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("settings.%s must be one of %s, %s, %s", skillpolicy.SettingKey, skillpolicy.AllEnabled, skillpolicy.AllDisabled, skillpolicy.FollowExternal)
+	}
+	if !skillpolicy.Valid(value) {
+		return fmt.Errorf("settings.%s must be one of %s, %s, %s", skillpolicy.SettingKey, skillpolicy.AllEnabled, skillpolicy.AllDisabled, skillpolicy.FollowExternal)
+	}
+	return nil
+}
+
 func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	id := workspaceIDFromURL(r, "id")
 	idUUID, ok := parseUUIDOrBadRequest(w, id, "workspace id")
@@ -471,6 +490,10 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Settings != nil {
 		if incoming, ok := req.Settings.(map[string]any); ok {
+			if err := validateRuntimeSkillsDefaultPolicy(incoming); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			// Only an old client's flip of the retired PR switch needs the
 			// stored value; see reconcilePRMergeSettings.
 			var stored map[string]any

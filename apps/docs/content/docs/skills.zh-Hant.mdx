@@ -100,6 +100,8 @@ scripts/check.sh
 
 連線電腦上已安裝的執行時本地 skill（Claude Code 和 Codex）會顯示在 AI 代理的 **Skills** 標籤頁中，可以按 AI 代理單獨停用。停用同樣需要有權修改該 AI 代理。
 
+繼承來的 skill 會跟隨執行時工具自身的停用設定——Claude 的 `skillOverrides` 與 Codex 的 `[[skills.config]]`——在工具裡關掉的 skill，這裡也視為關閉。每個 AI 代理仍可對單一 skill 覆寫為**強制開啟**、**強制關閉**或**繼承**；「繼承」的含義由工作區設定 `runtime_skills_default_policy` 決定：`all_enabled` 表示 Multica 不額外停用，`all_disabled` 表示排除全部繼承來的 skill，預設值 `follow_external` 則跟隨工具自身設定。外部狀態是重新整理繼承技能時取得的快照，Multica 並不會監看這些檔案，改完工具自身設定後請重新整理。
+
 對於 Oh-My-Pi，繼承列表和從執行時複製的操作會遵循啟動命令選定的 profile 及生效的 skill 篩選配置。發現過程在空目錄中執行，讀取使用者級配置；專案配置和顯式分配的 Multica skill 單獨處理。如果 OMP 無法返回 skill 清單，重新整理會報錯。
 
 ## 修改權限

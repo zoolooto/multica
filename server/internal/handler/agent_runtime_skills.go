@@ -16,8 +16,18 @@ import (
 
 const maxRuntimeSkillKeyLength = 512
 
-// DisabledRuntimeSkill identifies one runtime-local skill that an agent must
-// not inherit. RuntimeID scopes the choice to a single machine/runtime so a
+// Per-agent runtime skill override modes. An absent entry means "inherit the
+// workspace's runtime_skills_default_policy"; "off" and "on" are explicit
+// exceptions. Rows written before tri-state existed carry no Mode and mean
+// "off", so a user's current configuration keeps its meaning (GH #10776).
+const (
+	RuntimeSkillModeInherit = "inherit"
+	RuntimeSkillModeOn      = "on"
+	RuntimeSkillModeOff     = "off"
+)
+
+// DisabledRuntimeSkill identifies one runtime-local skill and how this agent
+// treats it. RuntimeID scopes the choice to a single machine/runtime so a
 // same-named skill on another runtime is unaffected.
 type DisabledRuntimeSkill struct {
 	RuntimeID string `json:"runtime_id"`
@@ -26,6 +36,39 @@ type DisabledRuntimeSkill struct {
 	Key       string `json:"key"`
 	Name      string `json:"name,omitempty"`
 	Plugin    string `json:"plugin,omitempty"`
+	// Mode is "on" or "off". Empty is the pre-tri-state spelling of "off" and
+	// is serialized that way so nothing changes for existing rows or clients.
+	Mode string `json:"mode,omitempty"`
+}
+
+// runtimeSkillMode normalizes a stored override to RuntimeSkillModeOn or
+// RuntimeSkillModeOff. Unknown values fall back to "off": a permissive reading
+// would silently enable a skill the user had disabled.
+// resolveRuntimeSkillToggleMode maps a toggle request onto an override mode.
+// The legacy `enabled` boolean keeps its pre-tri-state meaning: false stored a
+// disable, true removed it (which is inheritance, not a forced-on override).
+func resolveRuntimeSkillToggleMode(rawMode string, enabled *bool) (string, bool) {
+	switch mode := strings.ToLower(strings.TrimSpace(rawMode)); mode {
+	case RuntimeSkillModeInherit, RuntimeSkillModeOn, RuntimeSkillModeOff:
+		return mode, true
+	case "":
+	default:
+		return "", false
+	}
+	if enabled == nil {
+		return "", false
+	}
+	if *enabled {
+		return RuntimeSkillModeInherit, true
+	}
+	return RuntimeSkillModeOff, true
+}
+
+func runtimeSkillMode(skill DisabledRuntimeSkill) string {
+	if strings.EqualFold(strings.TrimSpace(skill.Mode), RuntimeSkillModeOn) {
+		return RuntimeSkillModeOn
+	}
+	return RuntimeSkillModeOff
 }
 
 func decodeDisabledRuntimeSkills(raw []byte) []DisabledRuntimeSkill {
@@ -39,13 +82,46 @@ func decodeDisabledRuntimeSkills(raw []byte) []DisabledRuntimeSkill {
 	return skills
 }
 
-func disabledRuntimeSkillsFor(raw []byte, runtimeID, provider string) []DisabledRuntimeSkill {
+// normalizeRuntimeSkillOverrides fills in the effective mode of every stored
+// override: "on" stays "on", everything else becomes the explicit "off" that
+// its presence already meant. Callers then filter by mode instead of
+// re-deriving the meaning of an empty Mode.
+func normalizeRuntimeSkillOverrides(raw []byte) []DisabledRuntimeSkill {
 	all := decodeDisabledRuntimeSkills(raw)
+	result := make([]DisabledRuntimeSkill, 0, len(all))
+	for _, skill := range all {
+		skill.Mode = runtimeSkillMode(skill)
+		result = append(result, skill)
+	}
+	return result
+}
+
+// runtimeSkillOverridesFor returns every override that applies to one runtime
+// and provider, in both directions. The claim wire needs the forced-on entries
+// too: they are how an agent escapes an all_disabled workspace policy.
+func runtimeSkillOverridesFor(raw []byte, runtimeID, provider string) []DisabledRuntimeSkill {
+	all := normalizeRuntimeSkillOverrides(raw)
 	result := make([]DisabledRuntimeSkill, 0, len(all))
 	for _, skill := range all {
 		if skill.RuntimeID == runtimeID && skill.Provider == provider {
 			result = append(result, skill)
 		}
+	}
+	return result
+}
+
+// disabledRuntimeSkillOverrides keeps only the off entries. The agent response
+// exposes these through the pre-tri-state `disabled_runtime_skills` field, so
+// clients that predate tri-state keep seeing exactly the entries whose meaning
+// they understand.
+func disabledRuntimeSkillOverrides(all []DisabledRuntimeSkill) []DisabledRuntimeSkill {
+	result := make([]DisabledRuntimeSkill, 0, len(all))
+	for _, skill := range all {
+		if runtimeSkillMode(skill) == RuntimeSkillModeOn {
+			continue
+		}
+		skill.Mode = ""
+		result = append(result, skill)
 	}
 	return result
 }
@@ -98,9 +174,15 @@ func (h *Handler) SetAgentRuntimeSkillEnabled(w http.ResponseWriter, r *http.Req
 		Name      string `json:"name"`
 		Plugin    string `json:"plugin"`
 		Enabled   *bool  `json:"enabled"`
+		Mode      string `json:"mode"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Enabled == nil {
-		writeError(w, http.StatusBadRequest, "runtime_id, root, key, and enabled are required")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "runtime_id, root, key, and mode are required")
+		return
+	}
+	mode, ok := resolveRuntimeSkillToggleMode(req.Mode, req.Enabled)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "runtime_id, root, key, and mode are required")
 		return
 	}
 	runtimeID, ok := parseUUIDOrBadRequest(w, req.RuntimeID, "runtime_id")
@@ -164,7 +246,9 @@ func (h *Handler) SetAgentRuntimeSkillEnabled(w http.ResponseWriter, r *http.Req
 		}
 		next = append(next, skill)
 	}
-	if !*req.Enabled {
+	// "inherit" is the absence of an entry; both explicit directions are stored.
+	if mode != RuntimeSkillModeInherit {
+		target.Mode = mode
 		next = append(next, target)
 	}
 	payload, err := json.Marshal(next)

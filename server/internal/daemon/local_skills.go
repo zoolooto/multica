@@ -49,7 +49,13 @@ type runtimeLocalSkillSummary struct {
 	Root       string `json:"root,omitempty"`
 	Plugin     string `json:"plugin,omitempty"`
 	CanDisable bool   `json:"can_disable,omitempty"`
-	FileCount  int    `json:"file_count"`
+	// ExternalEnabled reports whether the runtime tool's own configuration
+	// would load this skill: true when it would, false when the user disabled
+	// it there (Claude `skillOverrides`, Codex `[[skills.config]]`), and nil
+	// when the provider has no such concept or its configuration could not be
+	// read. Discovery must not claim either state when it cannot know.
+	ExternalEnabled *bool `json:"external_enabled,omitempty"`
+	FileCount       int   `json:"file_count"`
 }
 
 type runtimeLocalSkillBundle struct {
@@ -530,6 +536,10 @@ func listRuntimeLocalSkills(provider string) ([]runtimeLocalSkillSummary, bool, 
 	//     already accepts slash-delimited keys, so the list endpoint
 	//     must surface those nested skills too.
 	skills := make([]runtimeLocalSkillSummary, 0)
+	// Read the runtime tool's own disable configuration once per discovery
+	// pass, not once per skill: discovery already walks every root, and a
+	// per-skill file read would multiply that by the skill count.
+	external := loadLocalSkillExternalState(provider)
 	// Dedupe strictly by Key. Roots are visited in priority order
 	// (provider-specific first, ~/.agents/skills last); the first
 	// occurrence of a Key wins. This keeps backward compatibility provable:
@@ -554,7 +564,7 @@ func listRuntimeLocalSkills(provider string) ([]runtimeLocalSkillSummary, bool, 
 		// drop the legitimate second entry.
 		rootSkills := make([]runtimeLocalSkillSummary, 0)
 		visited := make(map[string]bool)
-		enumerateLocalSkills(provider, root, root.path, root.path, 0, visited, &rootSkills)
+		enumerateLocalSkills(provider, root, external, root.path, root.path, 0, visited, &rootSkills)
 
 		for _, s := range rootSkills {
 			if seenKeys[s.Key] {
@@ -586,6 +596,7 @@ func listRuntimeLocalSkills(provider string) ([]runtimeLocalSkillSummary, bool, 
 func enumerateLocalSkills(
 	provider string,
 	root localSkillRoot,
+	external *localSkillExternalState,
 	walkRoot, currentDir string,
 	depth int,
 	visited map[string]bool,
@@ -648,14 +659,15 @@ func enumerateLocalSkills(
 			}
 
 			*skills = append(*skills, runtimeLocalSkillSummary{
-				Key:         key,
-				Name:        skillName,
-				Description: description,
-				SourcePath:  relativizeHomePath(path),
-				Provider:    provider,
-				Root:        root.kind,
-				Plugin:      root.plugin,
-				CanDisable:  provider == "codex" || provider == "claude",
+				Key:             key,
+				Name:            skillName,
+				Description:     description,
+				SourcePath:      relativizeHomePath(path),
+				Provider:        provider,
+				Root:            root.kind,
+				Plugin:          root.plugin,
+				CanDisable:      provider == "codex" || provider == "claude",
+				ExternalEnabled: external.enabledFor(root.kind, root.plugin, key, skillName, path),
 				// `files` is the supporting bundle (collectLocalSkillFiles
 				// intentionally excludes SKILL.md so the bundle's `Content`
 				// field can carry it without duplication on import). For the
@@ -667,7 +679,7 @@ func enumerateLocalSkills(
 		}
 
 		// No SKILL.md here — descend looking for nested skills.
-		enumerateLocalSkills(provider, root, walkRoot, path, depth+1, visited, skills)
+		enumerateLocalSkills(provider, root, external, walkRoot, path, depth+1, visited, skills)
 	}
 }
 

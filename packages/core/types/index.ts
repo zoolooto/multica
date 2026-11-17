@@ -74,6 +74,7 @@ export type {
   SkillSummary,
   AgentSkillSummary,
   DisabledRuntimeSkill,
+  RuntimeSkillOverrideMode,
   SetAgentRuntimeSkillEnabledRequest,
   SkillFile,
   SkillVersion,
