@@ -9027,6 +9027,21 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if err != nil {
 		d.logger.Warn("execenv: inject runtime config failed (non-fatal)", "error", err)
 	}
+	// Codex stops loading project instructions once project_doc_max_bytes is
+	// reached and reports no error. The Multica brief is the last source in that
+	// chain, so an overflowing brief loses its tail first — Output/delivery
+	// rules included — and the run looks like agent noncompliance. Measure the
+	// chain before launch and surface it in the transcript below (GH #10807).
+	codexBudgetNotice := ""
+	if runtimeBriefWritten && provider == "codex" {
+		codexBudgetNotice = execenv.CodexInstructionBudgetNotice(env.WorkDir, env.CodexHome, codexSandboxArgs)
+		if codexBudgetNotice != "" {
+			taskLog.Warn("codex: project instructions exceed the effective instruction budget",
+				"workdir", env.WorkDir,
+				"codex_home", env.CodexHome,
+			)
+		}
+	}
 	if env.LocalWorktree != nil {
 		if err := env.LocalWorktree.ProtectRuntimeConfig(provider); err != nil {
 			return TaskResult{}, fmt.Errorf("protect worktree runtime config: %w", err)
@@ -9442,6 +9457,9 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// keep ascending seq values for the same task.
 	var msgSeq atomic.Int32
 	d.reportThinkingLevelWarning(ctx, task.ID, selection.ThinkingLevelWarning, &msgSeq, taskLog)
+	if codexBudgetNotice != "" {
+		d.reportTaskNotice(ctx, task.ID, codexBudgetNotice, &msgSeq, taskLog)
+	}
 	var pendingCursorLoginCheck *cursorMcpLoginCheck
 	if provider == "cursor" && env.CursorDataDir != "" {
 		check := cursorMcpLoginCheck{
