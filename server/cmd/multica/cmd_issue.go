@@ -291,8 +291,9 @@ var issueCreateCmd = &cobra.Command{
 	Long: `Create a new issue. Use --property "Name=Value" to set a custom property
 atomically with creation (repeatable, one distinct property per flag).
 --wake-me-on subscribes the agent running this command to the new issue: it is
-woken once when the issue reaches in_review or is blocked, and when a run on it
-fails. The rule lives on the created issue, so closing that issue withdraws it.
+woken each time the issue enters in_review or becomes blocked, and when a run
+on it fails. The rule lives on the created issue, so closing that issue
+withdraws it.
 For multi_text / multi_url, use a JSON array of strings when entries contain
 commas or the value starts with "["; simple entries can use comma-separated values:
   multica issue create --title "Review specs" --property 'Aliases=["Smith, John","[draft] spec"]'
@@ -1913,7 +1914,7 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	}
 	if len(wakeOnStates) > 0 {
 		if err := registerCreateWakes(ctx, client, result, wakeOnStates); err != nil {
-			return fmt.Errorf("issue %s was created, but %w; create the subscriptions from that agent's own run with `multica issue wakeup create %s` before retrying", issueDisplayKey(result), err, issueDisplayKey(result))
+			return fmt.Errorf("issue %s was created; do not run `issue create` again, which would create a second issue. %w", issueDisplayKey(result), err)
 		}
 	}
 

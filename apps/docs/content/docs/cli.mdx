@@ -151,7 +151,7 @@ Hear back about an issue you created, instead of polling it: `--wake-me-on` subs
 multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
 ```
 
-Each state is an ordinary wakeup on the new issue, so it carries the same loop protection and `--max-fires` cap, wakes once per change, and is withdrawn when the issue closes. Registering the same rule twice returns the existing one rather than adding a second. Without this flag, wait on another issue's state from the issue you are working on: `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review` — that covers an issue with no parent, including one you created on your own.
+Each state is an ordinary wakeup on the new issue, so it carries the same loop protection and `--max-fires` cap, wakes once per change, and is withdrawn when the issue closes. Registering the same event or condition rule twice — same instruction, events or condition, and filters — returns the existing one rather than adding a second. Without this flag, wait on another issue's state from the issue you are working on: `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review` — that covers an issue with no parent, including one you created on your own.
 
 ### Batch updates
 

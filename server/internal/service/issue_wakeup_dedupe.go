@@ -10,7 +10,7 @@ import (
 	db "github.com/multica-ai/multica/server/pkg/db/generated"
 )
 
-// findIdenticalEventWakeup returns the issue's enabled event rule that behaves
+// findIdenticalEventWakeup returns the caller's enabled event rule that behaves
 // exactly like params, so registering the same subscription twice does not add
 // a second row that would start a second run on every matching event. Agents
 // register wakeups from prompt text, and a retry after an ambiguous failure
@@ -20,12 +20,18 @@ import (
 // registrations serialize: the second one finds the rule the first created.
 // The comparison deliberately covers every field that changes what wakes the
 // target and when; source run and creation metadata do not, so a rule
-// registered by a different run is still the same rule.
+// registered by a different run is still the same rule. The creator is part of
+// the signature because a shared rule is not the caller's to manage: returning
+// another member's row would report success and then forbid updating it.
+//
+// Only creation reaches here. An explicit update names its rule, so there is
+// nothing to dedupe on that path.
 func findIdenticalEventWakeup(ctx context.Context, tx pgx.Tx, q *db.Queries, params db.CreateIssueWakeupParams) (db.IssueWakeup, bool, error) {
+	// System rules belong to the platform, not to the caller's subscriptions.
 	rows, err := tx.Query(ctx, `SELECT id FROM issue_wakeup
-		WHERE workspace_id=$1 AND issue_id=$2 AND agent_id=$3 AND kind='event' AND enabled
-		  AND mode=$4 AND instruction=$5
-		ORDER BY created_at, id`, params.WorkspaceID, params.IssueID, params.AgentID, params.Mode, params.Instruction)
+		WHERE workspace_id=$1 AND issue_id=$2 AND agent_id=$3 AND created_by=$4
+		  AND kind='event' AND enabled AND system_rule IS NULL
+		ORDER BY created_at, id`, params.WorkspaceID, params.IssueID, params.AgentID, params.CreatedBy)
 	if err != nil {
 		return db.IssueWakeup{}, false, err
 	}

@@ -145,6 +145,14 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 
 一個任務要依次提交多個 PR 時，用 `issue create --title "..." --pr-auto-complete off` 或 `issue update <id> --pr-auto-complete off`，讓這個任務在 PR 合併後保持原狀態。用 `--pr-auto-complete on` 恢復工作區規則，從下一次 PR 事件起生效。`issue pull-requests <id>` 會顯示任務開關、工作區開關、目標狀態和判斷結果，沒有關聯 PR 時也會顯示。支援該欄位的伺服器會在建立交易內儲存開關；舊伺服器會補呼叫一次 PUT，失敗時 CLI 會提供已建立的任務 ID 和重試用的 update 命令，請勿重複建立。
 
+要跟進自己建立的任務、不必反覆輪詢，`--wake-me-on` 會讓執行這條命令的智能體被登記到新任務上：`in_review`、`blocked`，以及該任務上的執行失敗。
+
+```bash
+multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
+```
+
+每個狀態都是掛在新任務上的一條普通喚醒，因此同樣受迴圈保護與 `--max-fires` 上限約束，每次狀態變化喚醒一次，任務關閉時一併撤銷；事件或條件規則以相同的指令、事件或條件、篩選條件再登記一次，會回傳既有那條，不會多出一次執行。不用這個開關時，也可以在正在處理的任務上等另一條任務的狀態：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`。
+
 ### 批次更新
 
 把相同修改套用到多條任務，也可用 `--ids-stdin` 從標準輸入逐行讀取任務編號或 UUID：
@@ -455,7 +463,7 @@ CLI 配置檔案包含可代表你訪問 Multica 的令牌。不要提交到倉�
 | --- | --- | --- | --- |
 | `issue` | `list` | 列出任務 | `--status`、`--priority`、`--assignee`、`--project`、`--metadata`（可重複）、`--property`（可重複，`"名稱=值"` 或 `"Score>=3"`、`"Due<2026-01-01"`、`"Notes~=text"` 這樣的比較；`__none__` 匹配未設定）、`--limit`、`--offset`、`--sort`（支援 `property:<名稱或 id>`）、`--full-id`、`--fields`（僅 JSON；逗號分隔，只輸出這些欄位）、`--resolve-properties`（僅 JSON；在儲存的 id 旁附上屬性、選項和成員名稱） |
 | | `get <id>` | 檢視單個任務 | `--resolve-properties`（僅 JSON；在儲存的 id 旁附上屬性、選項和成員名稱） |
-| | `create` | 建立任務 | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--pr-auto-complete on/off`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重複）、`--property`（可重複）、`--allow-duplicate`（已有同名未關閉任務時仍建立） |
+| | `create` | 建立任務 | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--pr-auto-complete on/off`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重複）、`--property`（可重複）、`--allow-duplicate`（已有同名未關閉任務時仍建立）、`--wake-me-on`（`in_review`、`blocked`、`failed`：新任務到這些狀態時喚醒建立它的智能體） |
 | | `update <id>` | 更新任務欄位 | 與 `create` 同類欄位，另有 `--position`、`--no-start`、`--duplicate-of` |
 | | `batch update <id>...` | 對多條任務套用相同修改 | `--ids-stdin`, `--status`, `--priority`, `--assignee` / `--assignee-id` / `--unassign`, `--project`, `--start-date`, `--due-date`, `--parent`, `--stage`, `--add-label`, `--remove-label`, `--clear-labels`, `--property`, `--unset-property`, `--no-start`, `--dry-run` |
 | | `delete <id>...` | 永久刪除一條或多條任務 | `--yes` 跳過確認；接受任務編號或完整 UUID; `--dry-run` |

@@ -57,7 +57,7 @@ import { WakeupDemo } from "@/components/demos/wakeup-demo";
 | 執行與子任務 | AI 代理的執行結束 | 這條任務上某個 AI 代理（或任意 AI 代理）的執行成功、失敗或被取消。 |
 | 執行與子任務 | 子任務完成 | 全部子任務結束（`done` 或 `cancelled`），或某個階段及之前的階段全部結束。沒有子任務時不會觸發。 |
 | 關聯 | 關聯 PR 的 CI 結束 | 也可以選 PR 合併、出現合併衝突。只看直接關聯到這條任務的 PR，有多個時任意一個滿足即可。CI 結束和合並衝突只支援 GitHub 上的 PR。 |
-| 關聯 | 其他任務的狀態變化 | 另一條任務完成、完成或取消，或進入審查中。 |
+| 關聯 | 其他任務的狀態變化 | 另一條任務完成或取消，或進入 `in_review`、`blocked`。 |
 | | 自定義事件 | 從 25 種原始事件裡勾選，例如表態、附件、評論被編輯或討論被解決。 |
 
 欄位、子任務、PR 和其他任務這幾類條件由平臺自己去查：條件在建立時已經成立的，下一次檢查（約 30 秒內）就會喚醒；"CI 結束"例外，它只認建立之後才出結果的檢查。
@@ -143,6 +143,7 @@ multica issue wakeup create OPS-56 --until-status in_review --instruction "檢�
 - **條件**：`--until-status`、`--until-assignee`、`--until-label`、`--until-property`、`--until-children-done [--stage N]`、`--until-pr checks|merged|conflicts`、`--until-issue <任務> --until-issue-state done|ended|in_review|blocked`。一條喚醒只能用一個 `--until-*`，不能和 `--event` 同時用。
 - **結束方式**：CLI 不會自動給等待加期限，用 `--expires-in 72h` 或 `--expires-at <RFC3339 時間>` 設結束時間；`--on-timeout wake` 讓事件規則在超時時再喚醒一次。`--max-fires N`（1–1000）限制重複規則最多執行幾次。
 - **結果放在哪**：`--parent <評論 ID>` 讓喚醒後的回覆留在原來的評論串裡。
+- **重複登記**：事件或條件規則以相同的指令、事件或條件、篩選條件再登記一次，會回傳既有那條，不會多出一次執行；建立請求失敗後重試是安全的。
 
 管理已有規則：
 

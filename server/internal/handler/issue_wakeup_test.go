@@ -110,10 +110,13 @@ func TestWorkspaceWakeupSummariesScopeAndBounds(t *testing.T) {
 	dbfx.Cleanup(t, "DELETE FROM issue_wakeup WHERE issue_id=$1", issue)
 	dbfx.Cleanup(t, "DELETE FROM issue_wakeup_receipt WHERE wakeup_id IN(SELECT id FROM issue_wakeup WHERE issue_id=$1)", issue)
 	var first db.IssueWakeup
+	served := map[string]bool{}
 	for i := 0; i < 5; i++ {
 		// Distinct instructions keep these separate rules: an identical
 		// registration returns the existing rule instead of adding another.
-		in := service.WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"comment.created"}, Instruction: fmt.Sprintf("PRIVATE PROMPT %d", i)}
+		instruction := fmt.Sprintf("PRIVATE PROMPT %d", i)
+		served[instruction] = true
+		in := service.WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"comment.created"}, Instruction: instruction}
 		if i == 0 {
 			in.Kind = "at"
 			in.EventTypes = nil
@@ -177,9 +180,13 @@ func TestWorkspaceWakeupSummariesScopeAndBounds(t *testing.T) {
 		if row.FilterAgentName.Valid || row.FilterAgentID.Valid || row.FilterTaskID.Valid {
 			t.Fatal("private source exposed in detail")
 		}
-		if !strings.HasPrefix(row.Instruction, "PRIVATE PROMPT") {
-			t.Fatal("shared issue instruction missing")
+		if !served[row.Instruction] {
+			t.Fatalf("row %s serves a foreign instruction %q", row.ID, row.Instruction)
 		}
+		delete(served, row.Instruction)
+	}
+	if len(served) > 0 {
+		t.Fatalf("instructions missing from detail: %v", served)
 	}
 	other := dbfx.Workspace(t, "other summary", "other-summary")
 	dbfx.Member(t, other, testUserID, "owner")

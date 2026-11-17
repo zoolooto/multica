@@ -145,6 +145,14 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 
 複数の PR を順番に作成するタスクでは、`issue create --title "..." --pr-auto-complete off` または `issue update <id> --pr-auto-complete off` で、マージ時も状態を維持できます。`--pr-auto-complete on` はワークスペースのルールを復元し、次の PR イベントから有効になります。`issue pull-requests <id>` は、PR が未関連付けでもタスクとワークスペースの設定、移行先の状態、判定結果を表示します。対応サーバーは作成トランザクション内で設定を保存し、旧サーバーには追加の PUT を送ります。失敗時は作成済み ID と再試行用の update コマンドが表示されるため、create を繰り返さないでください。
 
+作成したタスクを追い続けずに知るには、`--wake-me-on` でコマンドを実行しているエージェントを新しいタスクに登録します：`in_review`、`blocked`、そのタスクでの実行失敗です。
+
+```bash
+multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
+```
+
+各状態は新しいタスク上の普通のウェイクアップで、ループ保護と `--max-fires` の上限をそのまま受け、状態が変わるたびに起動し、タスクが閉じると一緒に外れます。同じ指示・イベントまたは条件・フィルターでイベント／条件ルールをもう一度登録すると、既存のルールが返り、実行は増えません。このフラグを使わない場合は、作業中のタスクから別のタスクの状態を待てます：`multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`。
+
 ### 一括更新
 
 複数のタスクに同じ変更を適用できます。`--ids-stdin` ではタスク番号または UUID を標準入力から1行ずつ読み取ります。
@@ -450,7 +458,7 @@ CLI の設定ファイルには、あなたとして Multica にアクセスで�
 | --- | --- | --- | --- |
 | `issue` | `list` | タスクを一覧 | `--status`、`--priority`、`--assignee`、`--project`、`--updated-since` / `--updated-until`（RFC3339 の期間指定、両方必須）、`--metadata`（繰り返し可）、`--property`（繰り返し可、`"名前=値"` または `"Score>=3"`、`"Due<2026-01-01"`、`"Notes~=text"` のような比較；`__none__` は未設定に一致）、`--limit`、`--offset`、`--sort`（`property:<名前または id>` に対応）、`--full-id`、`--resolve-properties`（JSON のみ；保存された id に加えてプロパティ名・選択肢名・メンバー名を返します）、`--fields`（JSON のみ；カンマ区切りで残すフィールドを指定） |
 | | `get <id>` | 単一のタスクを表示 | `--resolve-properties`（JSON のみ；保存された id に加えてプロパティ名・選択肢名・メンバー名を返します） |
-| | `create` | タスクを作成 | `--title`（必須）、`--description` / `--description-stdin` / `--description-file`、`--pr-auto-complete on/off`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（繰り返し可）、`--property`（繰り返し可）、`--allow-duplicate`（同じタイトルの未完了タスクがあっても作成） |
+| | `create` | タスクを作成 | `--title`（必須）、`--description` / `--description-stdin` / `--description-file`、`--pr-auto-complete on/off`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（繰り返し可）、`--property`（繰り返し可）、`--allow-duplicate`（同じタイトルの未完了タスクがあっても作成）、`--wake-me-on`（`in_review`、`blocked`、`failed`：新しいタスクがその状態になったら作成したエージェントを起動） |
 | | `update <id>` | タスクのフィールドを更新 | `create` と同系のフィールドに加え `--position`、`--no-start`、`--duplicate-of` |
 | | `batch update <id>...` | 複数のタスクに同じ変更を適用 | `--ids-stdin`, `--status`, `--priority`, `--assignee` / `--assignee-id` / `--unassign`, `--project`, `--start-date`, `--due-date`, `--parent`, `--stage`, `--add-label`, `--remove-label`, `--clear-labels`, `--property`, `--unset-property`, `--no-start`, `--dry-run` |
 | | `delete <id>...` | 1 件以上のタスクを完全に削除 | `--yes` で確認を省略。タスク番号または完全な UUID を指定; `--dry-run` |

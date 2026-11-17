@@ -159,6 +159,7 @@ multica issue wakeup create OPS-56 --until-status in_review --instruction "Check
 - **Conditions**: `--until-status`, `--until-assignee`, `--until-label`, `--until-property`, `--until-children-done [--stage N]`, `--until-pr checks|merged|conflicts`, and `--until-issue <issue> --until-issue-state done|ended|in_review|blocked`. Use one `--until-*` per wakeup, and not together with `--event`.
 - **Endings**: the CLI does not add a deadline for you. Use `--expires-in 72h` or `--expires-at <RFC3339 time>`; `--on-timeout wake` makes an event rule wake the agent once more at the deadline. `--max-fires N` (1–1000) caps how many runs a repeating rule starts.
 - **Where results go**: `--parent <comment-id>` keeps the woken run's reply in the original thread.
+- **Repeating a registration**: registering an event or condition rule twice with the same instruction, events or condition, and filters returns the existing rule and adds no second run. Repeating `create` after an ambiguous failure is safe.
 
 To manage existing rules:
 

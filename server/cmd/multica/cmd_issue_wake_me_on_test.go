@@ -80,6 +80,9 @@ func TestRunIssueCreateRegistersWakeMeOnSubscriptions(t *testing.T) {
 		t.Fatalf("failed rule events = %+v", wakeBodies[1])
 	}
 	for _, body := range wakeBodies {
+		if body["kind"] != "event" {
+			t.Fatalf("kind = %v, want event: the server rejects a rule without it: %+v", body["kind"], body)
+		}
 		if body["mode"] != "continuous" {
 			t.Fatalf("mode = %v, want continuous so a second round wakes again: %+v", body["mode"], body)
 		}
@@ -110,9 +113,45 @@ func TestRunIssueCreateReportsPartialWakeMeOnRegistration(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error when the subscription is not registered")
 	}
-	// The issue exists; the message must say so and point at the follow-up
-	// instead of inviting a retry that would create a duplicate.
-	if !strings.Contains(err.Error(), "MUL-1 was created") || !strings.Contains(err.Error(), "multica issue wakeup create") {
-		t.Fatalf("err = %v, want a partial-success message", err)
+	// The issue exists; the message must say so, name a command that actually
+	// registers what was missed, and not invite a retry that duplicates it.
+	for _, want := range []string{
+		"MUL-1 was created",
+		"do not run `issue create` again",
+		"multica issue wakeup create MUL-1 --kind event --mode continuous --until-status blocked",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("err = %v, want %q", err, want)
+		}
+	}
+	// A 400 is not an identity problem, so the message must not blame one.
+	if strings.Contains(err.Error(), "agent's identity") {
+		t.Fatalf("err = %v, want no identity claim for a 400", err)
+	}
+}
+
+func TestRunIssueCreateBlamesIdentityOnForbiddenWakeup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/issues" {
+			json.NewEncoder(w).Encode(map[string]any{"id": "issue-1", "identifier": "MUL-1", "title": "Audit", "status": "todo"})
+			return
+		}
+		http.Error(w, `{"error":"a human originator is required"}`, http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	t.Setenv("MULTICA_SERVER_URL", srv.URL)
+	t.Setenv("MULTICA_WORKSPACE_ID", "ws-1")
+	t.Setenv("MULTICA_TOKEN", "test-token")
+
+	cmd := newIssueCreateTestCmd()
+	_ = cmd.Flags().Set("title", "Audit")
+	_ = cmd.Flags().Set("wake-me-on", "failed")
+	err := runIssueCreate(cmd, nil)
+	if err == nil {
+		t.Fatal("want an error when the subscription is forbidden")
+	}
+	if !strings.Contains(err.Error(), "did not accept this agent's identity") || !strings.Contains(err.Error(), "--event task.failed") {
+		t.Fatalf("err = %v, want an identity hint with the failed-run remedy", err)
 	}
 }

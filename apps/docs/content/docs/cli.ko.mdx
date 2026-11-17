@@ -145,6 +145,14 @@ multica issue comment add MUL-123 --content-file note.md --steer-active
 
 여러 PR을 순서대로 만드는 태스크는 `issue create --title "..." --pr-auto-complete off` 또는 `issue update <id> --pr-auto-complete off`로 병합 후에도 상태를 유지할 수 있습니다. `--pr-auto-complete on`으로 워크스페이스 규칙을 복원하면 다음 PR 이벤트부터 적용됩니다. `issue pull-requests <id>`는 연결된 PR이 없어도 태스크 설정, 워크스페이스 설정, 대상 상태와 판단 결과를 표시합니다. 지원 서버는 생성 트랜잭션 안에서 설정을 저장하고, 이전 서버에는 추가 PUT을 보냅니다. 실패하면 생성된 태스크 ID와 재시도할 update 명령이 표시되므로 create를 반복하지 마세요.
 
+직접 만든 태스크를 계속 확인하지 않고 결과를 받으려면, `--wake-me-on`으로 명령을 실행하는 에이전트를 새 태스크에 등록합니다: `in_review`, `blocked`, 해당 태스크에서의 실행 실패입니다.
+
+```bash
+multica issue create --title "Audit the migration" --wake-me-on in_review,blocked,failed
+```
+
+각 상태는 새 태스크에 붙는 평범한 깨우기 규칙이라 루프 보호와 `--max-fires` 상한이 그대로 적용되고, 상태가 바뀔 때마다 깨우며, 태스크가 닫히면 함께 사라집니다. 같은 지시, 이벤트 또는 조건, 필터로 이벤트·조건 규칙을 다시 등록하면 기존 규칙이 반환되고 실행이 늘지 않습니다. 이 플래그 없이도 작업 중인 태스크에서 다른 태스크의 상태를 기다릴 수 있습니다: `multica issue wakeup create MUL-100 --until-issue MUL-123 --until-issue-state in_review`.
+
 ### 일괄 업데이트
 
 여러 태스크에 같은 변경을 적용합니다. `--ids-stdin`을 사용하면 표준 입력에서 태스크 번호나 UUID를 한 줄씩 읽을 수 있습니다.
@@ -450,7 +458,7 @@ CLI 설정 파일에는 사용자를 대신해 Multica에 접근할 수 있는 t
 | --- | --- | --- | --- |
 | `issue` | `list` | 태스크 목록 | `--status`, `--priority`, `--assignee`, `--project`, `--updated-since` / `--updated-until`(RFC3339 범위, 함께 지정), `--metadata`(반복 가능), `--property`(반복 가능, `"이름=값"` 또는 `"Score>=3"`, `"Due<2026-01-01"`, `"Notes~=text"` 같은 비교; `__none__`은 미설정과 일치), `--limit`, `--offset`, `--sort`(`property:<이름 또는 id>` 지원), `--full-id`, `--resolve-properties`(JSON 전용; 저장된 id와 함께 속성, 옵션, 멤버 이름을 반환), `--fields`(JSON 전용. 남길 필드를 쉼표로 구분) |
 | | `get <id>` | 태스크 하나 확인 | `--resolve-properties`(JSON 전용; 저장된 id와 함께 속성, 옵션, 멤버 이름을 반환) |
-| | `create` | 태스크 생성 | `--title`(필수), `--description` / `--description-stdin` / `--description-file`, `--pr-auto-complete on/off`, `--status`, `--priority`, `--assignee`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment`(반복 가능), `--property`(반복 가능), `--allow-duplicate`(같은 제목의 닫히지 않은 태스크가 있어도 생성) |
+| | `create` | 태스크 생성 | `--title`(필수), `--description` / `--description-stdin` / `--description-file`, `--pr-auto-complete on/off`, `--status`, `--priority`, `--assignee`, `--parent`, `--stage`, `--project`, `--start-date`, `--due-date`, `--attachment`(반복 가능), `--property`(반복 가능), `--allow-duplicate`(같은 제목의 닫히지 않은 태스크가 있어도 생성), `--wake-me-on`(`in_review`, `blocked`, `failed`: 새 태스크가 그 상태가 되면 만든 에이전트를 깨움) |
 | | `update <id>` | 태스크 필드 업데이트 | `create`와 같은 종류의 필드에 `--position`, `--no-start`, `--duplicate-of` 추가 |
 | | `batch update <id>...` | 여러 태스크에 같은 변경 적용 | `--ids-stdin`, `--status`, `--priority`, `--assignee` / `--assignee-id` / `--unassign`, `--project`, `--start-date`, `--due-date`, `--parent`, `--stage`, `--add-label`, `--remove-label`, `--clear-labels`, `--property`, `--unset-property`, `--no-start`, `--dry-run` |
 | | `delete <id>...` | 하나 이상의 태스크를 영구 삭제 | `--yes`로 확인 생략. 태스크 번호 또는 전체 UUID 사용; `--dry-run` |
