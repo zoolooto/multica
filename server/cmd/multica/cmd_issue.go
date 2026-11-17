@@ -290,6 +290,9 @@ var issueCreateCmd = &cobra.Command{
 	Short: "Create a new issue",
 	Long: `Create a new issue. Use --property "Name=Value" to set a custom property
 atomically with creation (repeatable, one distinct property per flag).
+--wake-me-on subscribes the agent running this command to the new issue: it is
+woken once when the issue reaches in_review or is blocked, and when a run on it
+fails. The rule lives on the created issue, so closing that issue withdraws it.
 For multi_text / multi_url, use a JSON array of strings when entries contain
 commas or the value starts with "["; simple entries can use comma-separated values:
   multica issue create --title "Review specs" --property 'Aliases=["Smith, John","[draft] spec"]'
@@ -702,6 +705,7 @@ func init() {
 	issueCreateCmd.Flags().String("start-date", "", "Start date (calendar day, YYYY-MM-DD)")
 	issueCreateCmd.Flags().String("due-date", "", "Due date (calendar day, YYYY-MM-DD)")
 	issueCreateCmd.Flags().Bool("allow-duplicate", false, "Allow creating an issue even when an active duplicate exists")
+	issueCreateCmd.Flags().StringSlice("wake-me-on", nil, "Wake the creating agent when this issue reaches in_review, is blocked, or a run on it fails (comma-separated; the rule lives on the new issue and needs an agent identity)")
 	issueCreateCmd.Flags().String("output", "json", "Output format: table or json")
 	issueCreateCmd.Flags().StringArray("attachment", nil, "File path to attach (one literal path per flag; repeat --attachment for multiple files). Each file is uploaded and its markdown reference is appended to the description, which is what makes it render on the issue page. To place it inline instead, reference the same path in the description (e.g. ![shot](./a.png)); that link is rewritten to the uploaded file")
 	issueCreateCmd.Flags().StringSlice("attachment-id", nil, "Existing attachment UUID(s) to bind to the created issue (can be specified multiple times)")
@@ -1719,6 +1723,10 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	if title == "" {
 		return fmt.Errorf("--title is required")
 	}
+	wakeOnStates, err := parseWakeMeOn(cmd)
+	if err != nil {
+		return err
+	}
 	statusFlag, _ := cmd.Flags().GetString("status")
 	if statusFlag != "" {
 		if err := validateIssueStatus(statusFlag); err != nil {
@@ -1902,6 +1910,11 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	}
 	if err := verifyIssueCreateProperties(createProperties, result); err != nil {
 		return fmt.Errorf("issue %s was created, but the server did not confirm its custom properties; review it before retrying: %w", issueDisplayKey(result), err)
+	}
+	if len(wakeOnStates) > 0 {
+		if err := registerCreateWakes(ctx, client, result, wakeOnStates); err != nil {
+			return fmt.Errorf("issue %s was created, but %w; create the subscriptions from that agent's own run with `multica issue wakeup create %s` before retrying", issueDisplayKey(result), err, issueDisplayKey(result))
+		}
 	}
 
 	output, _ := cmd.Flags().GetString("output")
