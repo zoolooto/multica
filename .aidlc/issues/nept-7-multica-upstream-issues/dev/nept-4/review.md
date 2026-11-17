@@ -59,3 +59,41 @@
 - 需求轴 2、3：错误按状态逐条给出可直接复制的 `wakeup create` 命令，明说不要再建一次；只有 403 才归因身份。
 - 需求轴 6、7：其余语言补 `blocked`；帮助文案改为「每次进入 / 变为该状态」。
 - 需求轴「需要人拍板」两条：本轮不改实现，记录在案，收尾说明里保留。
+
+---
+
+## 第 2 轮
+
+评审范围：`6162961a7..5ac2ae43d`（返工提交 `5ac2ae43d`）
+
+### 规范轴
+
+结论：通过。
+
+第 1 轮 4 条硬违规逐条复核：
+
+1. `issue_wakeup_test.go` 改回集合判等：5 条指令收进 `served`，逐行「必须在集合内、命中即删」，结束时集合为空。缺一条与重复一条都会失败，串号、截断、追加都抓得到。
+2. 去重范围：`cli.mdx` / `cli.zh.mdx` 限定为「事件或条件规则」，`issue-wakeups` 六种语言新增「重复登记」条目，与实现 `in.Kind == "event"` 一致。
+3. 去重查询加上 `system_rule IS NULL` 与 `created_by`，与仓库既有按智能体遍历订阅的查询一致；`created_by` 在进入该分支前已通过非空校验，不会出现 `= NULL` 永不命中。
+4. 并发与活动记录用例已补，计数限定在自己的 fixture 上，符合共享数据库的断言规则。
+
+返工未引入新的硬违规。异味（不挡）：去重仍先 `SELECT id` 再逐行取，属 N+1；SQL 谓词与 Go 判等两层过滤同一批字段；并发用例没有启动栅栏，未必真的压到行锁；`wakeMeOnInstruction` 的兜底与 `wakeMeOnCommand` 的 `strconv.Quote` 都依赖当前三条固定文案；fr / ja / ko 的示例仍用英文标题。
+
+### 需求轴
+
+结论：需改。
+
+第 1 轮 7 条全部核实修好：`kind=event` 全链路可被服务端接受（带条件的 `kind=event` 不再要求 `event_types`，`task.failed` 在可订阅事件内）；补救命令五个 flag 都存在且语义一致，`--instruction` 用 Go 字面量加引号，当前文案可安全粘贴；只有 403 才归因身份；并发与活动用例已补；CLI 测试断言了 `kind`；六种语言文档齐平；帮助文案不再说「只唤醒一次」。
+
+新发现（须改，本票范围内）：`sameWakeupSignature` 先比 `expiry_seconds`、随后又比 `expires_at` 的绝对时刻，而相对期限是按「当前时间 + N」算出来的，同一个 `--expires-in 72h` 两次调用必然落到不同时刻，等值判定必然失败。后果是文档推荐的最常用设限期写法在「请求成功但响应丢失」后重试仍会落下第二条 enabled 规则——正是本票要消灭的「事件到达各起一次 run」，也与本轮刚写进六种语言的「重试是安全的」直接矛盾。
+
+### 判定
+
+`fix`。第 2 轮返工处置：
+
+- `sameWakeupDeadline` 改为接收既有规则与新建参数：两者都带相对期限时只比秒数，否则才比绝对时刻（`--expires-at` 仍按值比较，`--expires-at` 与 `--expires-in` 混用判为不同规则）。
+- 补 `TestIssueWakeupCreateMatchesARelativeDeadline`：同一 `expires_in` 两次登记只落一行；不同秒数、绝对期限都不许并进第一条。
+- `registerCreateWakes` 增加未知状态防护，避免 `wakeMeOnInstruction` 的空字符串兜底变成一条空指令规则。
+- `cli.mdx` / `cli.zh.mdx` 补一句：该开关需要智能体运行的身份，终端里先建任务再 `wakeup create --agent-id`。
+- 需求轴的非阻断观察（错误文本句号后接小写、命令表 `update` 行、假服务器集成度、N+1）本轮不改，记录在案。
+
