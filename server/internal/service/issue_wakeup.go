@@ -568,6 +568,17 @@ func (s *IssueWakeupService) save(ctx context.Context, issueID, member, source, 
 			out, err = q.LockIssueWakeup(ctx, existingID)
 		}
 	} else {
+		if in.Kind == "event" {
+			// A repeated registration of the same rule is a no-op, not a second
+			// subscription: the issue row lock above serializes equal callers.
+			existing, ok, e := findIdenticalEventWakeup(ctx, tx, q, params)
+			if e != nil {
+				return out, e
+			}
+			if ok {
+				return existing, tx.Commit(ctx)
+			}
+		}
 		out, err = q.CreateIssueWakeup(ctx, params)
 	}
 	if err != nil {

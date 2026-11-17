@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -212,14 +213,18 @@ func TestIssueWakeupReceiptExpiryIsBoundedAndKeepsPending(t *testing.T) {
 
 func TestIssueWakeupActivationCapacityAndReenable(t *testing.T) {
 	f, s, issue, agent := wakeFixture(t)
+	// Distinct rules: an identical registration returns the existing rule
+	// instead of consuming capacity, so the instructions differ per rule.
 	in := WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"comment.created"}, Instruction: "check"}
 	var first db.IssueWakeup
 	for n := 0; n < 32; n++ {
+		in.Instruction = fmt.Sprintf("check %d", n)
 		w := wakeCreate(t, f, s, issue, in)
 		if n == 0 {
 			first = w
 		}
 	}
+	in.Instruction = "check 32"
 	_, err := s.Create(context.Background(), issue, parseTestUUID(t, f.UserID), pgtype.UUID{}, in)
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) || pgErr.ConstraintName != "issue_wakeup_active_limit" {
@@ -229,6 +234,7 @@ func TestIssueWakeupActivationCapacityAndReenable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	in.Instruction = "check after disable"
 	wakeCreate(t, f, s, issue, in)
 	_, err = s.Enable(context.Background(), issue, parseTestUUID(t, f.UserID), pgtype.UUID{}, first.ID, WakeupEnableInput{Revision: disabled.Revision})
 	if !errors.As(err, &pgErr) || pgErr.ConstraintName != "issue_wakeup_active_limit" {

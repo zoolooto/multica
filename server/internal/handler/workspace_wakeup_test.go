@@ -23,7 +23,9 @@ func TestWorkspaceWakeupsInventory(t *testing.T) {
 	svc := service.IssueWakeupService{Tasks: testHandler.TaskService}
 	var wakes []db.IssueWakeup
 	for i := 0; i < 5; i++ {
-		w, err := svc.Create(context.Background(), parseUUID(issue), parseUUID(testUserID), pgtype.UUID{}, service.WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"task.completed"}, Instruction: "PRIVATE PROMPT"})
+		// Distinct instructions keep these five separate rules: an identical
+		// registration returns the existing rule instead of adding another.
+		w, err := svc.Create(context.Background(), parseUUID(issue), parseUUID(testUserID), pgtype.UUID{}, service.WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"task.completed"}, Instruction: fmt.Sprintf("PRIVATE PROMPT %d", i)})
 		if err != nil {
 			t.Fatal(err)
 		}

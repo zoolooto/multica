@@ -813,10 +813,14 @@ func TestPrivateProjectWakeupListsSkipOutsiders(t *testing.T) {
 	dbfx.Cleanup(t, "DELETE FROM issue_wakeup WHERE issue_id=$1", f.secretIssue)
 	dbfx.Cleanup(t, "DELETE FROM issue_wakeup_receipt WHERE wakeup_id IN (SELECT id FROM issue_wakeup WHERE issue_id=$1)", f.secretIssue)
 	svc := service.IssueWakeupService{Tasks: testHandler.TaskService}
+	created := 0
 	create := func() string {
 		t.Helper()
+		created++
+		// Distinct instructions keep these separate rules: an identical
+		// registration returns the existing rule instead of adding another.
 		w, err := svc.Create(context.Background(), parseUUID(f.secretIssue), parseUUID(testUserID), pgtype.UUID{}, service.WakeupInput{
-			AgentID: agent, Kind: "event", Mode: "continuous", EventTypes: []string{"comment.created"}, Instruction: "check",
+			AgentID: agent, Kind: "event", Mode: "continuous", EventTypes: []string{"comment.created"}, Instruction: fmt.Sprintf("check %d", created),
 		})
 		if err != nil {
 			t.Fatal(err)

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,7 +111,9 @@ func TestWorkspaceWakeupSummariesScopeAndBounds(t *testing.T) {
 	dbfx.Cleanup(t, "DELETE FROM issue_wakeup_receipt WHERE wakeup_id IN(SELECT id FROM issue_wakeup WHERE issue_id=$1)", issue)
 	var first db.IssueWakeup
 	for i := 0; i < 5; i++ {
-		in := service.WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"comment.created"}, Instruction: "PRIVATE PROMPT"}
+		// Distinct instructions keep these separate rules: an identical
+		// registration returns the existing rule instead of adding another.
+		in := service.WakeupInput{AgentID: agent, Kind: "event", EventTypes: []string{"comment.created"}, Instruction: fmt.Sprintf("PRIVATE PROMPT %d", i)}
 		if i == 0 {
 			in.Kind = "at"
 			in.EventTypes = nil
@@ -174,7 +177,7 @@ func TestWorkspaceWakeupSummariesScopeAndBounds(t *testing.T) {
 		if row.FilterAgentName.Valid || row.FilterAgentID.Valid || row.FilterTaskID.Valid {
 			t.Fatal("private source exposed in detail")
 		}
-		if row.Instruction != "PRIVATE PROMPT" {
+		if !strings.HasPrefix(row.Instruction, "PRIVATE PROMPT") {
 			t.Fatal("shared issue instruction missing")
 		}
 	}
