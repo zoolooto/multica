@@ -3809,7 +3809,7 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
           )}
         >
           {showBackToTop && (
-            <div className="sticky top-0 z-20 h-0">
+            <div data-find-ignore className="sticky top-0 z-20 h-0">
               <Button
                 type="button"
                 variant="outline"
