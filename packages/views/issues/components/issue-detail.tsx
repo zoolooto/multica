@@ -39,6 +39,7 @@ import {
   Unlink,
   Users,
   ArrowDown,
+  ArrowUp,
 } from "@multica/ui/icons";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@multica/ui/components/ui/skeleton";
@@ -1604,6 +1605,22 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   // Virtuoso prop would never receive the element. Callback ref + state fixes
   // that: setState triggers the re-render that hands Virtuoso the element.
   const [scrollContainerEl, setScrollContainerEl] = useState<HTMLDivElement | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  useEffect(() => {
+    if (!scrollContainerEl) {
+      setShowBackToTop(false);
+      return;
+    }
+    const measure = () => setShowBackToTop(scrollContainerEl.scrollTop > scrollContainerEl.clientHeight);
+    measure();
+    scrollContainerEl.addEventListener("scroll", measure, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(scrollContainerEl);
+    return () => {
+      scrollContainerEl.removeEventListener("scroll", measure);
+      observer?.disconnect();
+    };
+  }, [scrollContainerEl]);
   // Bottom comment composer. Measured when scrolling a freshly posted comment
   // into view so its bottom lands above the composer rather than behind it.
   const composerRef = useRef<HTMLDivElement | null>(null);
@@ -2337,6 +2354,16 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
   const jumpToLatestLabel = newComments.ids.length > 0
     ? t(($) => $.timeline.new_comments, { count: newComments.ids.length })
     : t(($) => $.timeline.jump_to_latest);
+  const onBackToTop = useCallback(() => {
+    if (!scrollContainerEl) return;
+    const list = virtualTimelineRef.current;
+    if (list && items.length > 0) {
+      // Keep Virtuoso's size corrections aimed at the document top, before the list.
+      const offset = scrollContainerEl.scrollTop + list.getBoundingClientRect().top - scrollContainerEl.getBoundingClientRect().top;
+      virtuosoRef.current?.scrollToIndex({ index: 0, align: "start", offset: -offset });
+    }
+    scrollContainerEl.scrollTop = 0;
+  }, [scrollContainerEl, items.length]);
   // Header chip jump to a run's block. A run is either its own top-level row
   // or a slot inside the thread it answers, so find that row, undo whatever
   // folds the thread, scroll the row into place, then let the effect below
@@ -3781,6 +3808,20 @@ export function IssueDetail({ issueId, onDelete, onDone, onUnsubscribeArchive, d
               : cn(READING_COLUMN, "px-[var(--space-sm,0.75rem)] py-[var(--space-lg,1.5rem)] max-md:pb-chat-launcher md:px-[var(--space-xl,2rem)] md:py-[var(--space-xl,2rem)]"),
           )}
         >
+          {showBackToTop && (
+            <div className="sticky top-0 z-20 h-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onBackToTop}
+                className="absolute top-full left-1/2 mt-6 -translate-x-1/2 bg-background shadow-md dark:bg-background dark:hover:bg-muted"
+              >
+                <ArrowUp />
+                {t(($) => $.timeline.back_to_top)}
+              </Button>
+            </div>
+          )}
           <IssueDuplicateBanner
             issue={issue}
             onUnmark={() =>

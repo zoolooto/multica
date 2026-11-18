@@ -502,7 +502,7 @@ const scrollToIndexSpy = vi.hoisted(() => vi.fn());
 const scrollIntoViewIndexSpy = vi.hoisted(() => vi.fn());
 const mockVirtualWindow = vi.hoisted(() => ({
   enabled: false, delayedViewport: false, lateScrollReset: false, offscreenViewport: false, contentSettlesAbove: false, pendingSizeCorrection: false, holdAtIndex: false,
-  targetId: "", targetHeight: 100, scrollParent: null as HTMLElement | null,
+  initialStart: 0, targetId: "", targetHeight: 100, scrollParent: null as HTMLElement | null,
 }));
 
 vi.mock("react-virtuoso", () => ({
@@ -516,7 +516,7 @@ vi.mock("react-virtuoso", () => ({
     },
     ref: any,
   ) {
-    const [windowStart, setWindowStart] = useState(0);
+    const [windowStart, setWindowStart] = useState(mockVirtualWindow.initialStart);
     const correctionTimer = useRef<ReturnType<typeof setInterval> | null>(null);
     useEffect(() => {
       if (!mockVirtualWindow.holdAtIndex || !customScrollParent) return;
@@ -595,6 +595,7 @@ vi.mock("react-virtuoso", () => ({
 // with a spy so the deep-link effect's call can be observed.
 beforeEach(() => {
   mockVirtualWindow.enabled = false;
+  mockVirtualWindow.initialStart = 0;
   mockVirtualWindow.pendingSizeCorrection = false;
   mockVirtualWindow.holdAtIndex = false;
   mockVirtualWindow.delayedViewport = false;
@@ -3731,6 +3732,52 @@ describe("IssueDetail (shared)", () => {
     expect(await screen.findByDisplayValue("Implement authentication")).toBeVisible();
     // Taking the server version is local-only: the server already holds it.
     expect(mockApiObj.updateIssue).toHaveBeenCalledTimes(callsBeforeDiscard);
+  });
+
+  it.each([false, true])("returns to the document top and materializes the first timeline row (mobile: %s)", async (isMobile) => {
+    mockViewport.isMobile = isMobile;
+    mockVirtualWindow.enabled = true;
+    mockVirtualWindow.initialStart = 30;
+    const history = Array.from({ length: 40 }, (_, index) => ({
+      ...mockTimeline[0]!, id: `history-${index}`, parent_id: null, source_task_id: undefined,
+      content: `Historical comment ${index}`,
+      created_at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+    }));
+    mockApiObj.listTimeline.mockResolvedValue(history);
+    const { container } = renderIssueDetail();
+    await screen.findByText("Historical comment 30");
+    expect(screen.queryByText("Historical comment 0")).not.toBeInTheDocument();
+
+    const scroller = container.querySelector<HTMLDivElement>("[data-tab-scroll-root]")!;
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 500 });
+    scroller.getBoundingClientRect = () => new DOMRect(0, 100, 400, 500);
+    const list = screen.getByTestId("virtuoso-mock").parentElement!;
+    list.getBoundingClientRect = () => new DOMRect(0, 800 - scroller.scrollTop, 400, 1000);
+    scroller.scrollTop = 500;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+    scroller.scrollTop = 2000;
+    fireEvent.scroll(scroller);
+    fireEvent.click(await screen.findByRole("button", { name: "Back to top" }));
+
+    expect(scrollToIndexSpy).toHaveBeenLastCalledWith({ index: 0, align: "start", offset: -700 });
+    expect(scroller.scrollTop).toBe(0);
+    expect(await screen.findByText("Historical comment 0")).toBeInTheDocument();
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+  });
+
+  it("returns to the top when the timeline is empty", async () => {
+    mockApiObj.listTimeline.mockResolvedValue([]);
+    const { container } = renderIssueDetail();
+    await screen.findByTestId("virtuoso-mock");
+    const scroller = container.querySelector<HTMLDivElement>("[data-tab-scroll-root]")!;
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 500 });
+    scroller.scrollTop = 1000;
+    fireEvent.scroll(scroller);
+    fireEvent.click(await screen.findByRole("button", { name: "Back to top" }));
+    expect(scroller.scrollTop).toBe(0);
+    expect(scrollToIndexSpy).not.toHaveBeenCalled();
   });
 
   it("returns to the issue title and description from the outline", async () => {
