@@ -22,12 +22,12 @@ func TestNormalize(t *testing.T) {
 func TestValid(t *testing.T) {
 	t.Parallel()
 
-	for _, value := range []string{AllEnabled, AllDisabled, FollowExternal} {
+	for _, value := range []string{AllEnabled, AllDisabled, FollowExternal, " FOLLOW_EXTERNAL "} {
 		if !Valid(value) {
 			t.Fatalf("Valid(%q) = false", value)
 		}
 	}
-	for _, value := range []string{"", " All_Enabled ", "all", "follow"} {
+	for _, value := range []string{"", "all", "follow", "all_enabled_v2"} {
 		if Valid(value) {
 			t.Fatalf("Valid(%q) = true, want false", value)
 		}

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/multica-ai/multica/server/internal/skillpolicy"
 )
 
@@ -14,7 +16,7 @@ func discoveredSkill(root, key, name, plugin string) runtimeLocalSkillSummary {
 	return runtimeLocalSkillSummary{Root: root, Key: key, Name: name, Plugin: plugin, ExternalEnabled: nil}
 }
 
-func refIdentities(refs []runtimeSkillRef) []string {
+func refIdentities(refs []execenv.RuntimeSkillRefForEnv) []string {
 	out := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		out = append(out, ref.Root+"/"+ref.Plugin+"/"+ref.Key+"/"+ref.Name)
@@ -105,6 +107,20 @@ func TestRuntimeSkillDisables_PolicyMatrix(t *testing.T) {
 			policy:   skillpolicy.FollowExternal,
 			overrides: []DisabledRuntimeSkillData{
 				{RuntimeID: "rt", Provider: "claude", Root: "provider", Key: "reviewer", Name: "reviewer", Mode: "on"},
+			},
+			external: &localSkillExternalState{
+				provider:       "claude",
+				claudeDisabled: map[string]bool{"reviewer": true},
+				claudeKnown:    true,
+			},
+			want: nil,
+		},
+		{
+			name:     "an explicit on matches an external disable by invocation name when the discovery key differs",
+			provider: "claude",
+			policy:   skillpolicy.FollowExternal,
+			overrides: []DisabledRuntimeSkillData{
+				{RuntimeID: "rt", Provider: "claude", Root: "provider", Key: "reviewer-dir", Name: "reviewer", Mode: "on"},
 			},
 			external: &localSkillExternalState{
 				provider:       "claude",
@@ -253,6 +269,74 @@ func TestRuntimeSkillDisablesForTask(t *testing.T) {
 	refs = daemon.runtimeSkillDisablesForTask(task, "opencode")
 	if len(refs) != 0 {
 		t.Fatalf("unsupported provider must only receive explicit off overrides, got %+v", refs)
+	}
+}
+
+func TestRuntimeSkillDisablesForTask_DiscoveryFailureFallsBackToOverrides(t *testing.T) {
+	home := t.TempDir()
+	// A regular file where the provider root's parent directory belongs makes
+	// the discovery stat fail with something other than "not exists", which is
+	// the only way discovery reports an error for a supported provider.
+	if err := os.WriteFile(filepath.Join(home, ".claude"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	setTestUserHome(t, home)
+	t.Setenv("CODEX_HOME", "")
+
+	daemon := &Daemon{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		workspaces: map[string]*workspaceState{
+			"ws": {settings: json.RawMessage(`{"runtime_skills_default_policy":"all_disabled"}`)},
+		},
+	}
+	task := Task{
+		RuntimeID:   "rt",
+		WorkspaceID: "ws",
+		Agent: &AgentData{
+			RuntimeSkillOverrides: []DisabledRuntimeSkillData{
+				{RuntimeID: "rt", Provider: "claude", Root: "provider", Key: "reviewer", Name: "reviewer"},
+			},
+		},
+	}
+
+	refs := daemon.runtimeSkillDisablesForTask(task, "claude")
+	if len(refs) != 1 || refs[0].Key != "reviewer" {
+		t.Fatalf("discovery failure must degrade to explicit overrides only, got %+v", refs)
+	}
+}
+
+// TestRuntimeSkillDisablesForTask_PrefersTriStateOverrides proves the claim's
+// new field wins over the legacy off-only one, so a forced-on entry can escape
+// a policy that the legacy field would otherwise apply.
+func TestRuntimeSkillDisablesForTask_PrefersTriStateOverrides(t *testing.T) {
+	home := t.TempDir()
+	setTestUserHome(t, home)
+	t.Setenv("CODEX_HOME", "")
+	writeTestLocalSkill(t, filepath.Join(home, ".claude", "skills"), "planner", map[string]string{
+		"SKILL.md": "# Planner\n",
+	})
+
+	daemon := &Daemon{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		workspaces: map[string]*workspaceState{
+			"ws": {settings: json.RawMessage(`{"runtime_skills_default_policy":"all_disabled"}`)},
+		},
+	}
+	task := Task{
+		RuntimeID:   "rt",
+		WorkspaceID: "ws",
+		Agent: &AgentData{
+			DisabledRuntimeSkills: []DisabledRuntimeSkillData{
+				{RuntimeID: "rt", Provider: "claude", Root: "provider", Key: "planner", Name: "planner"},
+			},
+			RuntimeSkillOverrides: []DisabledRuntimeSkillData{
+				{RuntimeID: "rt", Provider: "claude", Root: "provider", Key: "planner", Name: "planner", Mode: "on"},
+			},
+		},
+	}
+
+	if refs := daemon.runtimeSkillDisablesForTask(task, "claude"); len(refs) != 0 {
+		t.Fatalf("the tri-state field must win over the legacy off-only field, got %+v", refs)
 	}
 }
 

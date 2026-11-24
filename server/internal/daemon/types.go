@@ -254,6 +254,12 @@ type AgentData struct {
 	ThinkingLevel         string                     `json:"thinking_level,omitempty"`
 	ServiceTier           string                     `json:"service_tier,omitempty"`
 	DisabledRuntimeSkills []DisabledRuntimeSkillData `json:"disabled_runtime_skills,omitempty"`
+	// RuntimeSkillOverrides is the same set in both directions. Servers that
+	// know about tri-state overrides send it, and this daemon prefers it when
+	// present; the legacy field above stays authoritative for older servers
+	// and is off-only by construction (a pre-tri-state daemon would invert an
+	// "on" entry into a disable).
+	RuntimeSkillOverrides []DisabledRuntimeSkillData `json:"runtime_skill_overrides,omitempty"`
 	// RuntimeConfig is the per-provider runtime_config JSON as stored on
 	// the agent record, forwarded verbatim by the claim endpoint. The
 	// daemon decodes provider-specific fields (e.g. openclaw mode +

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/multica-ai/multica/server/internal/daemon/execenv"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -71,7 +72,7 @@ func codexHomeDir(home string) string {
 
 // enabledFor reports whether the external tool would load this discovered
 // skill. nil means the provider or its configuration cannot answer.
-func (s *localSkillExternalState) enabledFor(rootKind, plugin, key, name, skillDir string) *bool {
+func (s *localSkillExternalState) enabledFor(rootKind, plugin, name, skillDir string) *bool {
 	if s == nil {
 		return nil
 	}
@@ -105,7 +106,7 @@ func (s *localSkillExternalState) enabledFor(rootKind, plugin, key, name, skillD
 // name as both the key and the invocation name, which is exactly what
 // prepareClaudeSkillSettings consumes; Codex refs carry the discovery root so
 // ensureCodexDisabledSkillsConfig can rebuild the SKILL.md path.
-func (s *localSkillExternalState) disabledRefs() []runtimeSkillRef {
+func (s *localSkillExternalState) disabledRefs() []execenv.RuntimeSkillRefForEnv {
 	if s == nil {
 		return nil
 	}
@@ -119,9 +120,9 @@ func (s *localSkillExternalState) disabledRefs() []runtimeSkillRef {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		refs := make([]runtimeSkillRef, 0, len(names))
+		refs := make([]execenv.RuntimeSkillRefForEnv, 0, len(names))
 		for _, name := range names {
-			refs = append(refs, runtimeSkillRef{Root: localSkillRootProvider, Key: name, Name: name})
+			refs = append(refs, execenv.RuntimeSkillRefForEnv{Root: localSkillRootProvider, Key: name, Name: name})
 		}
 		return refs
 	case "codex":
@@ -137,13 +138,13 @@ func (s *localSkillExternalState) disabledRefs() []runtimeSkillRef {
 			paths = append(paths, path)
 		}
 		sort.Strings(paths)
-		refs := make([]runtimeSkillRef, 0, len(paths))
+		refs := make([]execenv.RuntimeSkillRefForEnv, 0, len(paths))
 		for _, path := range paths {
 			root, key, ok := codexSkillRefForPath(roots, path)
 			if !ok {
 				continue
 			}
-			refs = append(refs, runtimeSkillRef{Root: root, Key: key})
+			refs = append(refs, execenv.RuntimeSkillRefForEnv{Root: root, Key: key})
 		}
 		return refs
 	default:

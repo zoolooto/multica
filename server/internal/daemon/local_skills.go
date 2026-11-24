@@ -667,7 +667,7 @@ func enumerateLocalSkills(
 				Root:            root.kind,
 				Plugin:          root.plugin,
 				CanDisable:      provider == "codex" || provider == "claude",
-				ExternalEnabled: external.enabledFor(root.kind, root.plugin, key, skillName, path),
+				ExternalEnabled: external.enabledFor(root.kind, root.plugin, skillName, path),
 				// `files` is the supporting bundle (collectLocalSkillFiles
 				// intentionally excludes SKILL.md so the bundle's `Content`
 				// field can carry it without duplication on import). For the

@@ -43,10 +43,11 @@ func Normalize(value string) string {
 }
 
 // Valid reports whether value is one of the three accepted policy values.
-// Callers that write the setting use it to reject typos instead of silently
-// rewriting the caller's payload.
+// It normalizes exactly like Normalize, so a value one caller accepts is not
+// silently rewritten by the other. Callers that write the setting use it to
+// reject typos instead of storing a value the daemon would reinterpret.
 func Valid(value string) bool {
-	switch strings.TrimSpace(value) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
 	case AllEnabled, AllDisabled, FollowExternal:
 		return true
 	default:

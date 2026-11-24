@@ -9,17 +9,6 @@ import (
 	"github.com/multica-ai/multica/server/internal/skillpolicy"
 )
 
-// runtimeSkillRef is the daemon-side identity of one runtime-local skill that
-// must be hidden from a task's provider process. It mirrors
-// execenv.RuntimeSkillRefForEnv but stays local so the policy math below is
-// testable without touching the execution environment.
-type runtimeSkillRef struct {
-	Root   string
-	Key    string
-	Name   string
-	Plugin string
-}
-
 // runtimeSkillOverrideModeOn marks a per-agent override that forces a skill on.
 // Every other stored mode (including the empty mode of rows written before
 // tri-state existed) means "off", which keeps existing user configuration
@@ -35,7 +24,6 @@ const runtimeSkillOverrideModeOn = "on"
 // disabled in its own configuration; the server never persists discovery.
 func (d *Daemon) runtimeSkillDisablesForTask(task Task, provider string) []execenv.RuntimeSkillRefForEnv {
 	policy := d.workspaceRuntimeSkillsDefaultPolicy(task.WorkspaceID)
-	external := loadLocalSkillExternalState(provider)
 
 	var discovered []runtimeLocalSkillSummary
 	if policy == skillpolicy.AllDisabled && runtimeSkillPolicySupported(provider) {
@@ -52,21 +40,23 @@ func (d *Daemon) runtimeSkillDisablesForTask(task Task, provider string) []exece
 		}
 	}
 
+	// Only follow_external consumes the tool's configuration, and reading it
+	// costs a file read, so skip that I/O for the other policies.
+	var external *localSkillExternalState
+	if policy == skillpolicy.FollowExternal {
+		external = loadLocalSkillExternalState(provider)
+	}
+
 	var overrides []DisabledRuntimeSkillData
 	if task.Agent != nil {
-		overrides = task.Agent.DisabledRuntimeSkills
+		// Prefer the tri-state field; the legacy one is off-only and exists
+		// for servers that predate forced-on overrides.
+		overrides = task.Agent.RuntimeSkillOverrides
+		if len(overrides) == 0 {
+			overrides = task.Agent.DisabledRuntimeSkills
+		}
 	}
-	refs := runtimeSkillDisables(provider, policy, overrides, task.RuntimeID, discovered, external)
-	result := make([]execenv.RuntimeSkillRefForEnv, 0, len(refs))
-	for _, ref := range refs {
-		result = append(result, execenv.RuntimeSkillRefForEnv{
-			Root:   ref.Root,
-			Key:    ref.Key,
-			Name:   ref.Name,
-			Plugin: ref.Plugin,
-		})
-	}
-	return result
+	return runtimeSkillDisables(provider, policy, overrides, task.RuntimeID, discovered, external)
 }
 
 // runtimeSkillPolicySupported reports whether this provider has a per-agent
@@ -87,15 +77,15 @@ func runtimeSkillDisables(
 	runtimeID string,
 	discovered []runtimeLocalSkillSummary,
 	external *localSkillExternalState,
-) []runtimeSkillRef {
+) []execenv.RuntimeSkillRefForEnv {
 	if !runtimeSkillPolicySupported(provider) {
 		policy = skillpolicy.AllEnabled
 	}
 	policy = skillpolicy.Normalize(policy)
 
-	refs := make([]runtimeSkillRef, 0, len(overrides)+len(discovered))
+	refs := make([]execenv.RuntimeSkillRefForEnv, 0, len(overrides)+len(discovered))
 	seen := make(map[string]bool)
-	add := func(ref runtimeSkillRef) {
+	add := func(ref execenv.RuntimeSkillRefForEnv) {
 		key := strings.Join([]string{ref.Root, ref.Plugin, ref.Key, ref.Name}, "\x00")
 		if seen[key] {
 			return
@@ -106,6 +96,13 @@ func runtimeSkillDisables(
 
 	forcedOn := make(map[string]bool, len(overrides))
 	forcedOff := make(map[string]bool, len(overrides))
+	// Claude's own config is keyed by invocation name while an override is
+	// stored under the discovery key, so identity alone cannot match the two
+	// (a skill directory named `reviewer-dir` may expose `reviewer`). Track the
+	// names too; a name is unique per Claude install, which is exactly the
+	// namespace `skillOverrides` uses.
+	forcedOnName := make(map[string]bool, len(overrides))
+	forcedOffName := make(map[string]bool, len(overrides))
 	for _, override := range overrides {
 		if override.RuntimeID != runtimeID || override.Provider != provider {
 			continue
@@ -114,12 +111,19 @@ func runtimeSkillDisables(
 		if identity == "" {
 			continue
 		}
+		name := strings.TrimSpace(override.Name)
 		if override.Mode == runtimeSkillOverrideModeOn {
 			forcedOn[identity] = true
+			if name != "" {
+				forcedOnName[name] = true
+			}
 			continue
 		}
 		forcedOff[identity] = true
-		add(runtimeSkillRef{Root: override.Root, Key: override.Key, Name: override.Name, Plugin: override.Plugin})
+		if name != "" {
+			forcedOffName[name] = true
+		}
+		add(execenv.RuntimeSkillRefForEnv{Root: override.Root, Key: override.Key, Name: override.Name, Plugin: override.Plugin})
 	}
 
 	inherits := func(root, key, plugin string) bool {
@@ -133,12 +137,15 @@ func runtimeSkillDisables(
 			if !inherits(skill.Root, skill.Key, skill.Plugin) {
 				continue
 			}
-			add(runtimeSkillRef{Root: skill.Root, Key: skill.Key, Name: skill.Name, Plugin: skill.Plugin})
+			add(execenv.RuntimeSkillRefForEnv{Root: skill.Root, Key: skill.Key, Name: skill.Name, Plugin: skill.Plugin})
 		}
 	case skillpolicy.FollowExternal:
 		for _, ref := range external.disabledRefs() {
 			identity := runtimeSkillIdentity(ref.Root, ref.Key, ref.Plugin)
 			if identity != "" && (forcedOn[identity] || forcedOff[identity]) {
+				continue
+			}
+			if name := strings.TrimSpace(ref.Name); name != "" && (forcedOnName[name] || forcedOffName[name]) {
 				continue
 			}
 			add(ref)

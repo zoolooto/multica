@@ -3121,6 +3121,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	if rc := bytes.TrimSpace(agent.RuntimeConfig); len(rc) > 0 && !bytes.Equal(rc, []byte("{}")) && !bytes.Equal(rc, []byte("null")) {
 		runtimeConfig = json.RawMessage(agent.RuntimeConfig)
 	}
+	runtimeSkillOverrides := runtimeSkillOverridesFor(agent.DisabledRuntimeSkills, runtimeID, runtime.Provider)
 	resp.Agent = &TaskAgentData{
 		ID:                    uuidToString(agent.ID),
 		Name:                  agent.Name,
@@ -3132,7 +3133,8 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		ThinkingLevel:         agent.ThinkingLevel.String,
 		ServiceTier:           agent.ServiceTier.String,
 		RuntimeConfig:         runtimeConfig,
-		DisabledRuntimeSkills: runtimeSkillOverridesFor(agent.DisabledRuntimeSkills, runtimeID, runtime.Provider),
+		DisabledRuntimeSkills: disabledRuntimeSkillOverrides(runtimeSkillOverrides),
+		RuntimeSkillOverrides: runtimeSkillOverrides,
 	}
 	// Snapshot the agent's persistent OpenClaw model override for this claim.
 	// It applies to every claim until changed or cleared; later edits do not

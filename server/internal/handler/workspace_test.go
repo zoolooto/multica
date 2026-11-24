@@ -1558,6 +1558,29 @@ func TestCreateWorkspace_RejectsInvalidIssuePrefix(t *testing.T) {
 
 // TestUpdateWorkspace_RejectsInvalidIssuePrefix is the PATCH half of the same
 // hole: settings normalizes client-side, but the endpoint took anything.
+func TestUpdateWorkspace_RejectsInvalidRuntimeSkillsDefaultPolicy(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("database not available")
+	}
+
+	var before string
+	dbfx.QueryRow(t, `SELECT settings::text FROM workspace WHERE id = $1`, testWorkspaceID).Scan(&before)
+
+	req := withURLParam(
+		newRequest("PATCH", "/api/workspaces/"+testWorkspaceID, map[string]any{
+			"settings": map[string]any{"runtime_skills_default_policy": "all_inherited"},
+		}),
+		"id", testWorkspaceID,
+	)
+	testutil.Call(t, testHandler.UpdateWorkspace, req).Want(http.StatusBadRequest)
+
+	var after string
+	dbfx.QueryRow(t, `SELECT settings::text FROM workspace WHERE id = $1`, testWorkspaceID).Scan(&after)
+	if after != before {
+		t.Fatalf("settings changed on a rejected update: %q → %q", before, after)
+	}
+}
+
 func TestUpdateWorkspace_RejectsInvalidIssuePrefix(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

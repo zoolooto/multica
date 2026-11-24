@@ -449,10 +449,7 @@ func validateRuntimeSkillsDefaultPolicy(settings map[string]any) error {
 		return nil
 	}
 	value, ok := raw.(string)
-	if !ok {
-		return fmt.Errorf("settings.%s must be one of %s, %s, %s", skillpolicy.SettingKey, skillpolicy.AllEnabled, skillpolicy.AllDisabled, skillpolicy.FollowExternal)
-	}
-	if !skillpolicy.Valid(value) {
+	if !ok || !skillpolicy.Valid(value) {
 		return fmt.Errorf("settings.%s must be one of %s, %s, %s", skillpolicy.SettingKey, skillpolicy.AllEnabled, skillpolicy.AllDisabled, skillpolicy.FollowExternal)
 	}
 	return nil

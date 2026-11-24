@@ -869,6 +869,13 @@ type TaskAgentData struct {
 	ThinkingLevel         string                      `json:"thinking_level,omitempty"`
 	ServiceTier           string                      `json:"service_tier,omitempty"`
 	DisabledRuntimeSkills []DisabledRuntimeSkill      `json:"disabled_runtime_skills,omitempty"`
+	// RuntimeSkillOverrides carries the same set in both directions. It exists
+	// because a pre-tri-state daemon reads every entry of
+	// DisabledRuntimeSkills as "off": sending a forced-on entry there would
+	// invert its meaning. Older daemons ignore this field, so they keep
+	// exactly the off-only view they understand while new ones see the
+	// agent's "on" overrides too.
+	RuntimeSkillOverrides []DisabledRuntimeSkill `json:"runtime_skill_overrides,omitempty"`
 	// RuntimeConfig is the agent's saved runtime_config JSON as-is. The
 	// daemon decodes it per-provider — e.g. the openclaw backend reads
 	// `mode` + `gateway.*` to choose between embedded and gateway routing

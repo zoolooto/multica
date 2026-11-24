@@ -41,9 +41,6 @@ type DisabledRuntimeSkill struct {
 	Mode string `json:"mode,omitempty"`
 }
 
-// runtimeSkillMode normalizes a stored override to RuntimeSkillModeOn or
-// RuntimeSkillModeOff. Unknown values fall back to "off": a permissive reading
-// would silently enable a skill the user had disabled.
 // resolveRuntimeSkillToggleMode maps a toggle request onto an override mode.
 // The legacy `enabled` boolean keeps its pre-tri-state meaning: false stored a
 // disable, true removed it (which is inheritance, not a forced-on override).
@@ -64,6 +61,9 @@ func resolveRuntimeSkillToggleMode(rawMode string, enabled *bool) (string, bool)
 	return RuntimeSkillModeOff, true
 }
 
+// runtimeSkillMode normalizes a stored override to RuntimeSkillModeOn or
+// RuntimeSkillModeOff. Unknown values fall back to "off": a permissive reading
+// would silently enable a skill the user had disabled.
 func runtimeSkillMode(skill DisabledRuntimeSkill) string {
 	if strings.EqualFold(strings.TrimSpace(skill.Mode), RuntimeSkillModeOn) {
 		return RuntimeSkillModeOn
