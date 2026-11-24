@@ -455,6 +455,17 @@ func validateRuntimeSkillsDefaultPolicy(settings map[string]any) error {
 	return nil
 }
 
+// normalizeRuntimeSkillsDefaultPolicy stores the canonical spelling once the
+// value passed validation, so a client that sent " FOLLOW_EXTERNAL " does not
+// leave the daemon reading a value this endpoint would reject on a later write.
+func normalizeRuntimeSkillsDefaultPolicy(settings map[string]any) {
+	raw, ok := settings[skillpolicy.SettingKey].(string)
+	if !ok {
+		return
+	}
+	settings[skillpolicy.SettingKey] = skillpolicy.Normalize(raw)
+}
+
 func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	id := workspaceIDFromURL(r, "id")
 	idUUID, ok := parseUUIDOrBadRequest(w, id, "workspace id")
@@ -491,6 +502,7 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
+			normalizeRuntimeSkillsDefaultPolicy(incoming)
 			// Only an old client's flip of the retired PR switch needs the
 			// stored value; see reconcilePRMergeSettings.
 			var stored map[string]any

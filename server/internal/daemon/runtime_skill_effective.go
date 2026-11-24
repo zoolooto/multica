@@ -45,18 +45,51 @@ func (d *Daemon) runtimeSkillDisablesForTask(task Task, provider string) []exece
 	var external *localSkillExternalState
 	if policy == skillpolicy.FollowExternal {
 		external = loadLocalSkillExternalState(provider)
+		if external != nil && !external.known() && d.logger != nil {
+			d.logger.Debug("runtime skills: the tool's own skill config is unreadable; following policy as if nothing were disabled",
+				"runtime_id", task.RuntimeID, "provider", provider)
+		}
 	}
 
 	var overrides []DisabledRuntimeSkillData
 	if task.Agent != nil {
-		// Prefer the tri-state field; the legacy one is off-only and exists
-		// for servers that predate forced-on overrides.
-		overrides = task.Agent.RuntimeSkillOverrides
-		if len(overrides) == 0 {
-			overrides = task.Agent.DisabledRuntimeSkills
-		}
+		// Merge instead of probing for which field the server supports: the
+		// tri-state field wins on conflict, and the legacy off-only field still
+		// contributes when it is all an older server sent.
+		overrides = mergeRuntimeSkillOverrides(task.Agent.DisabledRuntimeSkills, task.Agent.RuntimeSkillOverrides)
 	}
 	return runtimeSkillDisables(provider, policy, overrides, task.RuntimeID, discovered, external)
+}
+
+// mergeRuntimeSkillOverrides unions the legacy and tri-state override lists.
+// The tri-state entry wins when both describe the same skill, so a server that
+// sends both (off entries in the legacy field, everything in the new one) is
+// read exactly as the new field says.
+func mergeRuntimeSkillOverrides(legacy, triState []DisabledRuntimeSkillData) []DisabledRuntimeSkillData {
+	if len(legacy) == 0 {
+		return triState
+	}
+	if len(triState) == 0 {
+		return legacy
+	}
+	merged := make([]DisabledRuntimeSkillData, 0, len(legacy)+len(triState))
+	seen := make(map[string]bool, len(legacy)+len(triState))
+	add := func(override DisabledRuntimeSkillData) {
+		identity := override.RuntimeID + "\x00" + override.Provider + "\x00" +
+			runtimeSkillIdentity(override.Root, override.Key, override.Plugin)
+		if seen[identity] {
+			return
+		}
+		seen[identity] = true
+		merged = append(merged, override)
+	}
+	for _, override := range triState {
+		add(override)
+	}
+	for _, override := range legacy {
+		add(override)
+	}
+	return merged
 }
 
 // runtimeSkillPolicySupported reports whether this provider has a per-agent

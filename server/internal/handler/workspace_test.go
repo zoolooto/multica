@@ -1556,8 +1556,21 @@ func TestCreateWorkspace_RejectsInvalidIssuePrefix(t *testing.T) {
 	}
 }
 
-// TestUpdateWorkspace_RejectsInvalidIssuePrefix is the PATCH half of the same
-// hole: settings normalizes client-side, but the endpoint took anything.
+// TestUpdateWorkspace_RejectsInvalidRuntimeSkillsDefaultPolicyWiring covers the
+// response path without a database: validation runs before any query, so an
+// empty handler is enough to prove the 400 reaches the client.
+func TestUpdateWorkspace_RejectsInvalidRuntimeSkillsDefaultPolicyWiring(t *testing.T) {
+	req := withURLParam(
+		newRequest("PATCH", "/api/workspaces/"+testWorkspaceID, map[string]any{
+			"settings": map[string]any{"runtime_skills_default_policy": "all_inherited"},
+		}),
+		"id", testWorkspaceID,
+	)
+	testutil.Call(t, (&Handler{}).UpdateWorkspace, req).Want(http.StatusBadRequest)
+}
+
+// TestUpdateWorkspace_RejectsInvalidRuntimeSkillsDefaultPolicy covers the
+// persistence half: a typo must not be stored for the daemon to reinterpret.
 func TestUpdateWorkspace_RejectsInvalidRuntimeSkillsDefaultPolicy(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -1581,6 +1594,8 @@ func TestUpdateWorkspace_RejectsInvalidRuntimeSkillsDefaultPolicy(t *testing.T) 
 	}
 }
 
+// TestUpdateWorkspace_RejectsInvalidIssuePrefix is the PATCH half of the same
+// hole: settings normalizes client-side, but the endpoint took anything.
 func TestUpdateWorkspace_RejectsInvalidIssuePrefix(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")

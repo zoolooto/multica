@@ -70,6 +70,23 @@ func codexHomeDir(home string) string {
 	return filepath.Join(home, ".codex")
 }
 
+// known reports whether this provider's own configuration could be read. An
+// unreadable or absent file is not an error, but it is not the same as "the
+// tool disabled nothing", so callers that follow the external state can log it.
+func (s *localSkillExternalState) known() bool {
+	if s == nil {
+		return false
+	}
+	switch s.provider {
+	case "claude":
+		return s.claudeKnown
+	case "codex":
+		return s.codexKnown
+	default:
+		return false
+	}
+}
+
 // enabledFor reports whether the external tool would load this discovered
 // skill. nil means the provider or its configuration cannot answer.
 func (s *localSkillExternalState) enabledFor(rootKind, plugin, name, skillDir string) *bool {

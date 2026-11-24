@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/multica-ai/multica/server/internal/daemon/execenv"
@@ -283,8 +285,9 @@ func TestRuntimeSkillDisablesForTask_DiscoveryFailureFallsBackToOverrides(t *tes
 	setTestUserHome(t, home)
 	t.Setenv("CODEX_HOME", "")
 
+	var logs bytes.Buffer
 	daemon := &Daemon{
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logger: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		workspaces: map[string]*workspaceState{
 			"ws": {settings: json.RawMessage(`{"runtime_skills_default_policy":"all_disabled"}`)},
 		},
@@ -302,6 +305,11 @@ func TestRuntimeSkillDisablesForTask_DiscoveryFailureFallsBackToOverrides(t *tes
 	refs := daemon.runtimeSkillDisablesForTask(task, "claude")
 	if len(refs) != 1 || refs[0].Key != "reviewer" {
 		t.Fatalf("discovery failure must degrade to explicit overrides only, got %+v", refs)
+	}
+	// Assert the fallback branch actually ran: without it, a nil discovery
+	// result produces the same refs, so the result alone proves nothing.
+	if !strings.Contains(logs.String(), "discovery for all_disabled policy failed") {
+		t.Fatalf("expected the discovery-failure warning, got %q", logs.String())
 	}
 }
 
