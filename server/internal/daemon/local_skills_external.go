@@ -25,6 +25,10 @@ import (
 // config reports unknown (nil) instead of asserting every skill is enabled.
 type localSkillExternalState struct {
 	provider string
+	// configPath is where this provider's disable configuration would live,
+	// kept so callers can tell "no config file" (normal) from "config exists
+	// but could not be parsed" (worth a log line).
+	configPath string
 	// claudeDisabled holds the invocation names Claude Code itself has turned
 	// off. Keys are matched against the discovered skill's invocation name —
 	// the same name the task environment writes into skillOverrides.
@@ -50,13 +54,11 @@ func loadLocalSkillExternalState(provider string) *localSkillExternalState {
 	state := &localSkillExternalState{provider: provider}
 	switch provider {
 	case "claude":
-		state.claudeDisabled, state.claudeKnown = readClaudeDisabledSkills(
-			filepath.Join(home, ".claude", "settings.json"),
-		)
+		state.configPath = filepath.Join(home, ".claude", "settings.json")
+		state.claudeDisabled, state.claudeKnown = readClaudeDisabledSkills(state.configPath)
 	case "codex":
-		state.codexDisabled, state.codexKnown = readCodexDisabledSkillPaths(
-			filepath.Join(codexHomeDir(home), "config.toml"),
-		)
+		state.configPath = filepath.Join(codexHomeDir(home), "config.toml")
+		state.codexDisabled, state.codexKnown = readCodexDisabledSkillPaths(state.configPath)
 	}
 	return state
 }
@@ -71,8 +73,8 @@ func codexHomeDir(home string) string {
 }
 
 // known reports whether this provider's own configuration could be read. An
-// unreadable or absent file is not an error, but it is not the same as "the
-// tool disabled nothing", so callers that follow the external state can log it.
+// absent or unreadable file both leave the answer unknown, which is not the
+// same as "the tool disabled nothing".
 func (s *localSkillExternalState) known() bool {
 	if s == nil {
 		return false
@@ -85,6 +87,19 @@ func (s *localSkillExternalState) known() bool {
 	default:
 		return false
 	}
+}
+
+// configUnreadable reports a real problem: the file is there but its contents
+// could not be understood. A missing file is the normal case for a machine
+// that never configured the tool and must not produce noise.
+func (s *localSkillExternalState) configUnreadable() bool {
+	if s == nil || s.known() || s.configPath == "" {
+		return false
+	}
+	if _, err := os.Stat(s.configPath); err != nil {
+		return false
+	}
+	return true
 }
 
 // enabledFor reports whether the external tool would load this discovered

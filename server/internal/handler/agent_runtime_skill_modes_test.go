@@ -99,6 +99,29 @@ func TestDisabledRuntimeSkillOverridesKeepsOnlyOffEntries(t *testing.T) {
 	}
 }
 
+func TestNormalizeRuntimeSkillsDefaultPolicy(t *testing.T) {
+	t.Parallel()
+
+	settings := map[string]any{
+		"runtime_skills_default_policy": "  FOLLOW_EXTERNAL ",
+		"github_enabled":                true,
+	}
+	normalizeRuntimeSkillsDefaultPolicy(settings)
+	if got := settings["runtime_skills_default_policy"]; got != "follow_external" {
+		t.Fatalf("policy stored as %v, want the canonical spelling", got)
+	}
+	if settings["github_enabled"] != true {
+		t.Fatal("normalization must not touch other settings keys")
+	}
+
+	// An absent or non-string value is left for validation to reject.
+	absent := map[string]any{}
+	normalizeRuntimeSkillsDefaultPolicy(absent)
+	if _, ok := absent["runtime_skills_default_policy"]; ok {
+		t.Fatal("normalization must not invent the key")
+	}
+}
+
 func TestValidateRuntimeSkillsDefaultPolicy(t *testing.T) {
 	t.Parallel()
 

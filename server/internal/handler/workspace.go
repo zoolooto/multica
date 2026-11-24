@@ -456,8 +456,8 @@ func validateRuntimeSkillsDefaultPolicy(settings map[string]any) error {
 }
 
 // normalizeRuntimeSkillsDefaultPolicy stores the canonical spelling once the
-// value passed validation, so a client that sent " FOLLOW_EXTERNAL " does not
-// leave the daemon reading a value this endpoint would reject on a later write.
+// value passed validation. Readers already normalize, so this only keeps the
+// stored settings — and what the API returns — from carrying a case variant.
 func normalizeRuntimeSkillsDefaultPolicy(settings map[string]any) {
 	raw, ok := settings[skillpolicy.SettingKey].(string)
 	if !ok {

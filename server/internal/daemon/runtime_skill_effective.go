@@ -45,9 +45,9 @@ func (d *Daemon) runtimeSkillDisablesForTask(task Task, provider string) []exece
 	var external *localSkillExternalState
 	if policy == skillpolicy.FollowExternal {
 		external = loadLocalSkillExternalState(provider)
-		if external != nil && !external.known() && d.logger != nil {
-			d.logger.Debug("runtime skills: the tool's own skill config is unreadable; following policy as if nothing were disabled",
-				"runtime_id", task.RuntimeID, "provider", provider)
+		if external.configUnreadable() && d.logger != nil {
+			d.logger.Warn("runtime skills: the tool's own skill config exists but could not be parsed; following policy as if nothing were disabled",
+				"runtime_id", task.RuntimeID, "provider", provider, "path", external.configPath)
 		}
 	}
 
@@ -61,10 +61,9 @@ func (d *Daemon) runtimeSkillDisablesForTask(task Task, provider string) []exece
 	return runtimeSkillDisables(provider, policy, overrides, task.RuntimeID, discovered, external)
 }
 
-// mergeRuntimeSkillOverrides unions the legacy and tri-state override lists.
-// The tri-state entry wins when both describe the same skill, so a server that
-// sends both (off entries in the legacy field, everything in the new one) is
-// read exactly as the new field says.
+// mergeRuntimeSkillOverrides unions the legacy and tri-state override lists so
+// neither field can drop an override the other carries. The tri-state entry
+// wins when both describe the same skill.
 func mergeRuntimeSkillOverrides(legacy, triState []DisabledRuntimeSkillData) []DisabledRuntimeSkillData {
 	if len(legacy) == 0 {
 		return triState
